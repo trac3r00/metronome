@@ -5,6 +5,7 @@ export const MAX_TAP_MS = 2000;
 export const MAX_RECONNECT_DELAY_MS = 30000;
 export const PRESET_TAP_MOVE_PX = 8;
 export const PRESET_TAP_MAX_MS = 500;
+export const AUDIO_UNLOCK_MESSAGE = "Tap anywhere to enable audio";
 
 export function parseBpmInput(value) {
   const numeric = Number(value);
@@ -122,4 +123,57 @@ export function applyLocalMessage(state, message) {
     default:
       return state;
   }
+}
+
+export async function syncSchedulerToState({ state, scheduler, visibilityState, onAutoplayBlocked }) {
+  if (visibilityState === "hidden") {
+    if (scheduler.isRunning) {
+      scheduler.stop();
+    }
+    return;
+  }
+  if (state.playing) {
+    if (!scheduler.isRunning) {
+      try {
+        await scheduler.start(state);
+      } catch (error) {
+        onAutoplayBlocked(error);
+      }
+    }
+    return;
+  }
+  if (scheduler.isRunning) {
+    scheduler.stop();
+  }
+}
+
+export function createAutoplayGestureGate({ target, start, showMessage, onError = () => {} }) {
+  let pending = false;
+
+  const clear = () => {
+    target.removeEventListener("pointerdown", unlock, true);
+    target.removeEventListener("keydown", unlock, true);
+    pending = false;
+  };
+
+  const unlock = async () => {
+    clear();
+    try {
+      await start();
+    } catch (error) {
+      onError(error);
+    }
+  };
+
+  return {
+    request() {
+      showMessage(AUDIO_UNLOCK_MESSAGE, true);
+      if (pending) {
+        return;
+      }
+      pending = true;
+      target.addEventListener("pointerdown", unlock, { once: true, capture: true });
+      target.addEventListener("keydown", unlock, { once: true, capture: true });
+    },
+  };
 }

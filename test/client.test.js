@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  AUDIO_UNLOCK_MESSAGE,
   applyLocalMessage,
+  createAutoplayGestureGate,
   createPresetTapGesture,
   getReconnectDelayMs,
   nextTapTempo,
   parseBpmInput,
+  syncSchedulerToState,
 } from "../public/client-utils.js";
+import { getNativeSharePayload, hasNativeShare } from "../public/qr-share.js";
 
 describe("client guard helpers", () => {
   it("clamps bpm input into the supported range", () => {
@@ -139,4 +143,120 @@ describe("client guard helpers", () => {
 
     assert.equal(taps, 1);
   });
+
+  it("detects native share support and builds the modal share payload", () => {
+    const supportedNavigator = { share() {} };
+    const unsupportedNavigator = {};
+    const location = { href: "https://example.test/?room=main" };
+
+    assert.equal(hasNativeShare(supportedNavigator), true);
+    assert.equal(hasNativeShare(unsupportedNavigator), false);
+    assert.deepEqual(getNativeSharePayload(location), {
+      title: "Church Metronome",
+      url: "https://example.test/?room=main",
+    });
+  });
+
+  it("starts a stopped scheduler when a late websocket state is already playing", async () => {
+    const scheduler = new FakeScheduler(false);
+    const state = { bpm: 128, beats_per_bar: 4, beat_unit: 4, playing: true };
+
+    await syncSchedulerToState({ state, scheduler, visibilityState: "visible", onAutoplayBlocked() {} });
+
+    assert.equal(scheduler.starts, 1);
+    assert.deepEqual(scheduler.startedStates[0], state);
+  });
+
+  it("applies tempo and meter changes live without restarting a running scheduler", async () => {
+    const scheduler = new FakeScheduler(true);
+    const state = { bpm: 96, beats_per_bar: 6, beat_unit: 8, playing: true };
+
+    await syncSchedulerToState({ state, scheduler, visibilityState: "visible", onAutoplayBlocked() {} });
+
+    assert.equal(scheduler.starts, 0);
+    assert.equal(scheduler.stops, 0);
+  });
+
+  it("stops a running scheduler when websocket state is no longer playing", async () => {
+    const scheduler = new FakeScheduler(true);
+    const state = { bpm: 128, beats_per_bar: 4, beat_unit: 4, playing: false };
+
+    await syncSchedulerToState({ state, scheduler, visibilityState: "visible", onAutoplayBlocked() {} });
+
+    assert.equal(scheduler.starts, 0);
+    assert.equal(scheduler.stops, 1);
+  });
+
+  it("gates autoplay resume until the next user interaction", async () => {
+    const target = new FakeEventTarget();
+    let starts = 0;
+    const gate = createAutoplayGestureGate({
+      target,
+      start: async () => {
+        starts += 1;
+      },
+      showMessage(message, isError) {
+        assert.equal(message, AUDIO_UNLOCK_MESSAGE);
+        assert.equal(isError, true);
+      },
+    });
+
+    gate.request();
+    assert.equal(starts, 0);
+    await target.dispatch("pointerdown");
+
+    assert.equal(starts, 1);
+    await target.dispatch("keydown");
+    assert.equal(starts, 1);
+  });
 });
+
+class FakeScheduler {
+  constructor(isRunning) {
+    this.isRunning = isRunning;
+    this.starts = 0;
+    this.stops = 0;
+    this.startedStates = [];
+  }
+
+  async start(state) {
+    this.starts += 1;
+    this.startedStates.push(state);
+    this.isRunning = true;
+  }
+
+  stop() {
+    this.stops += 1;
+    this.isRunning = false;
+  }
+}
+
+class FakeEventTarget {
+  constructor() {
+    this.listeners = new Map();
+  }
+
+  addEventListener(type, listener, options = {}) {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push({ listener, once: Boolean(options.once) });
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type, listener) {
+    const listeners = this.listeners.get(type) ?? [];
+    this.listeners.set(
+      type,
+      listeners.filter((entry) => entry.listener !== listener),
+    );
+  }
+
+  async dispatch(type) {
+    const listeners = [...(this.listeners.get(type) ?? [])];
+    for (const entry of listeners) {
+      await entry.listener();
+      if (entry.once) {
+        this.removeEventListener(type, entry.listener);
+      }
+    }
+  }
+}

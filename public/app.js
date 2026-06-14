@@ -1,10 +1,13 @@
 import { AudioScheduler } from "./audio.js";
 import {
+  AUDIO_UNLOCK_MESSAGE,
   applyLocalMessage,
+  createAutoplayGestureGate,
   createPresetTapGesture,
   getReconnectDelayMs,
   nextTapTempo,
   parseBpmInput,
+  syncSchedulerToState,
 } from "./client-utils.js";
 import { bindShareModal } from "./qr-share.js";
 import { renderTempoControl, syncTempoControl } from "./tempo-controls.js";
@@ -37,10 +40,17 @@ const elements = {
   shareQr: document.querySelector("#share-qr"),
   shareUrl: document.querySelector("#share-url"),
   shareCopy: document.querySelector("#share-copy"),
+  shareNative: document.querySelector("#share-native"),
   shareClose: document.querySelector("#share-close"),
 };
 
 const scheduler = new AudioScheduler((beat, delay) => flashBeat(beat, delay));
+const autoplayGate = createAutoplayGestureGate({
+  target: document,
+  start: () => (state?.playing ? scheduler.start(state) : Promise.resolve()),
+  showMessage,
+  onError: () => showMessage(AUDIO_UNLOCK_MESSAGE, true),
+});
 let socket = null;
 let state = createInitialState();
 let settings = { control_style: "slider", theme: "auto", sound_id: "classic", volume: 80, updated_at: null };
@@ -69,6 +79,7 @@ function bindControls() {
     qrTarget: elements.shareQr,
     urlText: elements.shareUrl,
     copyButton: elements.shareCopy,
+    nativeShareButton: elements.shareNative,
     closeButton: elements.shareClose,
   });
   bindPressStepper(elements.bpmMinus, -1);
@@ -243,11 +254,12 @@ function applyState(nextState) {
   renderBeatIndicator();
   syncTempoControl(elements.tempoControl, state.bpm);
   scheduler.update(state);
-  if (state.playing && document.visibilityState !== "hidden") {
-    scheduler.start(state).catch(() => showMessage("Audio playback is suspended.", true));
-  } else {
-    scheduler.stop();
-  }
+  syncSchedulerToState({
+    state,
+    scheduler,
+    visibilityState: document.visibilityState,
+    onAutoplayBlocked: () => autoplayGate.request(),
+  });
 }
 
 function renderBeatIndicator(activeBeat = 0) {
@@ -478,7 +490,12 @@ async function handleVisibilityChange() {
     return;
   }
   if (state?.playing) {
-    scheduler.start(state).catch(() => showMessage("Audio playback is suspended.", true));
+    syncSchedulerToState({
+      state,
+      scheduler,
+      visibilityState: document.visibilityState,
+      onAutoplayBlocked: () => autoplayGate.request(),
+    });
   }
 }
 

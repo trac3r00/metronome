@@ -676,6 +676,17 @@ input[type="range"]::-moz-range-thumb {
   font-size: 0.85rem;
 }
 
+.share-native {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.share-native[hidden] {
+  display: none;
+}
+
 .settings-shell {
   display: grid;
   gap: 1rem;
