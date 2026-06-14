@@ -110,6 +110,23 @@ describe("state validation", () => {
     assert.equal(loaded.beat_unit, 4);
   });
 
+  it("applies a settings preset bpm and meter in one state update", () => {
+    // Given: the default room state.
+    const state = DEFAULT_STATE;
+
+    // When: the stage preset row applies a settings preset.
+    const result = reduceMessage(state, {
+      type: "apply_preset",
+      bpm: 140,
+      meter: "6/8",
+    });
+
+    // Then: BPM and meter change together in one reduced state.
+    assert.equal(result.bpm, 140);
+    assert.equal(result.beats_per_bar, 6);
+    assert.equal(result.beat_unit, 8);
+  });
+
   it("rejects loading an empty preset slot", () => {
     // Given: the default state with no saved presets.
     const state = DEFAULT_STATE;

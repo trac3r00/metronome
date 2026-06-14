@@ -51,6 +51,13 @@ export function reduceMessage(state, message) {
         beat_unit: preset.beat_unit,
       };
     }
+    case "apply_preset":
+      return {
+        ...state,
+        bpm: parsed.bpm,
+        beats_per_bar: parsed.beats_per_bar,
+        beat_unit: parsed.beat_unit,
+      };
     default:
       return assertNever(parsed);
   }
@@ -97,6 +104,12 @@ function parseMessage(message) {
       return { type: "overwrite_preset", slot: parseSlot(message.slot) };
     case "load_preset":
       return { type: "load_preset", slot: parseSlot(message.slot) };
+    case "apply_preset":
+      return {
+        type: "apply_preset",
+        bpm: parseBpm(message.bpm),
+        ...parseMeterString(message.meter),
+      };
     default:
       throw new ValidationError("Unsupported message type");
   }
@@ -139,6 +152,14 @@ function parseMeter(beatsPerBar, beatUnit) {
     throw new ValidationError("Meter must be 4/4, 3/4, or 6/8");
   }
   return { beats_per_bar: beatsPerBar, beat_unit: beatUnit };
+}
+
+function parseMeterString(value) {
+  if (typeof value !== "string") {
+    throw new ValidationError("Meter must be 4/4, 3/4, or 6/8");
+  }
+  const [beatsPerBar, beatUnit] = value.split("/").map((part) => Number(part));
+  return parseMeter(beatsPerBar, beatUnit);
 }
 
 function parseSlot(value) {

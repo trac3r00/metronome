@@ -2,7 +2,7 @@ services:
   metronome:
     build: .
     ports:
-      - "3000:3000"
+      - "${METRONOME_PORT:-3000}:3000"
     environment:
       PORT: "3000"
       METRONOME_DB_PATH: /app/data/metronome.sqlite

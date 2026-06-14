@@ -99,4 +99,23 @@ describe("client guard helpers", () => {
     assert.deepEqual(saved.presets[0], { slot: 1, bpm: 120, beats_per_bar: 4, beat_unit: 4 });
     assert.equal(loaded.bpm, 120);
   });
+
+  it("applies settings presets locally as one bpm and meter update", () => {
+    // Given: local state in offline mode.
+    const state = {
+      bpm: 120,
+      beats_per_bar: 4,
+      beat_unit: 4,
+      playing: false,
+      presets: Array.from({ length: 10 }, () => null),
+    };
+
+    // When: the stage preset row applies a settings preset.
+    const applied = applyLocalMessage(state, { type: "apply_preset", bpm: 140, meter: "6/8" });
+
+    // Then: BPM and meter update together.
+    assert.equal(applied.bpm, 140);
+    assert.equal(applied.beats_per_bar, 6);
+    assert.equal(applied.beat_unit, 8);
+  });
 });

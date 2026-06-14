@@ -12,7 +12,6 @@ const elements = {
   addPreset: document.querySelector("#add-preset"),
   controlStyles: document.querySelector("#control-styles"),
   theme: document.querySelector("#theme-select"),
-  fullscreenOnly: document.querySelector("#fullscreen-only"),
   lastSynced: document.querySelector("#last-synced"),
   forceResync: document.querySelector("#force-resync"),
   modal: document.querySelector("#preset-modal"),
@@ -25,9 +24,8 @@ const elements = {
 };
 
 let settings = {
-  control_style: "dial",
+  control_style: "slider",
   theme: "auto",
-  fullscreen_only: false,
   updated_at: null,
   presets: [],
 };
@@ -42,9 +40,6 @@ function bindEvents() {
   elements.addPreset.addEventListener("click", () => openPresetModal());
   elements.form.addEventListener("submit", savePreset);
   elements.theme.addEventListener("change", () => saveSettings({ theme: elements.theme.value }));
-  elements.fullscreenOnly.addEventListener("change", () =>
-    saveSettings({ fullscreen_only: elements.fullscreenOnly.checked }),
-  );
   elements.forceResync.addEventListener("click", loadSettings);
   window.addEventListener("online", connect);
   window.addEventListener("offline", () => setConnection("offline", "Offline"));
@@ -93,7 +88,6 @@ function applySettings(nextSettings) {
   settings = { ...settings, ...nextSettings };
   document.documentElement.dataset.theme = settings.theme;
   elements.theme.value = settings.theme;
-  elements.fullscreenOnly.checked = Boolean(settings.fullscreen_only);
   renderControlStyles();
   renderPresets();
   markSynced();
