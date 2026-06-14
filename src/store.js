@@ -10,13 +10,17 @@ const DEFAULT_SETTINGS = Object.freeze({
   control_style: "slider",
   theme: "auto",
   fullscreen_only: false,
+  sound_id: "classic",
+  volume: 80,
 });
 const CONTROL_STYLES = new Set(["dial", "slider", "wheel", "tap"]);
 const THEMES = new Set(["auto", "light", "dark"]);
+const SOUND_IDS = new Set(["classic", "wood", "digital", "cowbell", "tick"]);
 const METERS = new Set(["4/4", "3/4", "6/8"]);
 const DEFAULT_SETTINGS_PRESETS = Object.freeze([60, 80, 100, 120, 140]);
 const MIN_BPM = 30;
 const MAX_BPM = 300;
+const SCHEMA_VERSION = 2;
 
 export class StateStore {
   constructor(dbPath) {
@@ -43,7 +47,13 @@ export class StateStore {
         control_style TEXT NOT NULL DEFAULT 'slider',
         theme TEXT NOT NULL DEFAULT 'auto',
         fullscreen_only INTEGER NOT NULL DEFAULT 0,
+        sound_id TEXT NOT NULL DEFAULT 'classic',
+        volume INTEGER NOT NULL DEFAULT 80,
         updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS presets (
         id TEXT PRIMARY KEY,
@@ -63,9 +73,17 @@ export class StateStore {
     this.ensureSettingsColumns();
     this.db
       .prepare(
-        "INSERT OR IGNORE INTO settings (id, control_style, theme, fullscreen_only, updated_at) VALUES (1, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO settings (id, control_style, theme, fullscreen_only, sound_id, volume, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?)",
       )
-      .run(DEFAULT_SETTINGS.control_style, DEFAULT_SETTINGS.theme, DEFAULT_SETTINGS.fullscreen_only ? 1 : 0, now);
+      .run(
+        DEFAULT_SETTINGS.control_style,
+        DEFAULT_SETTINGS.theme,
+        DEFAULT_SETTINGS.fullscreen_only ? 1 : 0,
+        DEFAULT_SETTINGS.sound_id,
+        DEFAULT_SETTINGS.volume,
+        now,
+      );
+    this.applySchemaMigrations();
     this.seedSettingsPresets(now);
   }
 
@@ -100,8 +118,37 @@ export class StateStore {
 
   ensureSettingsColumns() {
     const columns = this.db.prepare("PRAGMA table_info(settings)").all().map((column) => column.name);
-    if (!columns.includes("fullscreen_only")) {
-      this.db.exec("ALTER TABLE settings ADD COLUMN fullscreen_only INTEGER NOT NULL DEFAULT 0");
+    this.addSettingsColumnIfMissing(columns, "fullscreen_only", "fullscreen_only INTEGER NOT NULL DEFAULT 0");
+    this.addSettingsColumnIfMissing(columns, "sound_id", "sound_id TEXT NOT NULL DEFAULT 'classic'");
+    this.addSettingsColumnIfMissing(columns, "volume", "volume INTEGER NOT NULL DEFAULT 80");
+  }
+
+  addSettingsColumnIfMissing(columns, name, definition) {
+    if (columns.includes(name)) {
+      return;
+    }
+    try {
+      this.db.exec(`ALTER TABLE settings ADD COLUMN ${definition}`);
+    } catch (error) {
+      if (!/duplicate column/i.test(error.message)) {
+        throw error;
+      }
+    }
+  }
+
+  applySchemaMigrations() {
+    const row = this.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
+    const version = row ? Number(row.value) : 0;
+    if (version < 2) {
+      const settings = this.db.prepare("SELECT control_style FROM settings WHERE id = 1").get();
+      if (settings?.control_style === "dial") {
+        this.db.prepare("UPDATE settings SET control_style = ?, updated_at = ? WHERE id = 1").run("slider", Date.now());
+      }
+    }
+    if (version < SCHEMA_VERSION) {
+      this.db
+        .prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .run(String(SCHEMA_VERSION));
     }
   }
 
@@ -157,7 +204,8 @@ export class StateStore {
     return {
       control_style: settings.control_style,
       theme: settings.theme,
-      fullscreen_only: Boolean(settings.fullscreen_only),
+      sound_id: settings.sound_id,
+      volume: settings.volume,
       updated_at: settings.updated_at,
       presets: this.listPresets(),
     };
@@ -169,13 +217,13 @@ export class StateStore {
       control_style:
         patch.control_style === undefined ? current.control_style : parseControlStyle(patch.control_style),
       theme: patch.theme === undefined ? current.theme : parseTheme(patch.theme),
-      fullscreen_only:
-        patch.fullscreen_only === undefined ? current.fullscreen_only : parseBoolean(patch.fullscreen_only),
+      sound_id: patch.sound_id === undefined ? current.sound_id : parseSoundId(patch.sound_id),
+      volume: patch.volume === undefined ? current.volume : parseVolume(patch.volume),
       updated_at: Date.now(),
     };
     this.db
-      .prepare("UPDATE settings SET control_style = ?, theme = ?, fullscreen_only = ?, updated_at = ? WHERE id = 1")
-      .run(next.control_style, next.theme, next.fullscreen_only ? 1 : 0, next.updated_at);
+      .prepare("UPDATE settings SET control_style = ?, theme = ?, sound_id = ?, volume = ?, updated_at = ? WHERE id = 1")
+      .run(next.control_style, next.theme, next.sound_id, next.volume, next.updated_at);
     return this.getSettings();
   }
 
@@ -305,6 +353,20 @@ function parseTheme(value) {
   return value;
 }
 
+function parseSoundId(value) {
+  if (!SOUND_IDS.has(value)) {
+    throw new StoreValidationError("Sound must be classic, wood, digital, cowbell, or tick");
+  }
+  return value;
+}
+
+function parseVolume(value) {
+  if (!Number.isInteger(value) || value < 0 || value > 100) {
+    throw new StoreValidationError("Volume must be between 0 and 100");
+  }
+  return value;
+}
+
 function parseBpm(value) {
   if (!Number.isInteger(value) || value < MIN_BPM || value > MAX_BPM) {
     throw new StoreValidationError("BPM must be between 30 and 300");
@@ -327,11 +389,4 @@ function parseOptionalName(value) {
     throw new StoreValidationError("Preset name must be text");
   }
   return value.trim() || null;
-}
-
-function parseBoolean(value) {
-  if (typeof value !== "boolean") {
-    throw new StoreValidationError("Fullscreen mode must be true or false");
-  }
-  return value;
 }

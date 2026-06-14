@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
+import Database from "better-sqlite3";
 import WebSocket from "ws";
 
 import { createAppServer } from "../src/server.js";
+import { StateStore } from "../src/store.js";
 
 const servers = [];
 const tempDirs = [];
@@ -203,6 +205,9 @@ describe("server settings and preset sync", () => {
     // Then: server defaults include slider control, auto theme, and five ordered presets.
     assert.equal(settings.control_style, "slider");
     assert.equal(settings.theme, "auto");
+    assert.equal(settings.sound_id, "classic");
+    assert.equal(settings.volume, 80);
+    assert.equal(Object.hasOwn(settings, "fullscreen_only"), false);
     assert.deepEqual(
       settings.presets.map(({ bpm, meter, name, position }) => ({ bpm, meter, name, position })),
       [
@@ -224,16 +229,53 @@ describe("server settings and preset sync", () => {
     const response = await fetchJson(`${baseUrl}/api/settings`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ control_style: "wheel", theme: "dark" }),
+      body: JSON.stringify({ control_style: "wheel", theme: "dark", sound_id: "wood", volume: 35, fullscreen_only: true }),
     });
     const broadcast = await readJson(client);
 
     // Then: the response and websocket broadcast expose the persisted settings.
     assert.equal(response.control_style, "wheel");
     assert.equal(response.theme, "dark");
+    assert.equal(response.sound_id, "wood");
+    assert.equal(response.volume, 35);
+    assert.equal(Object.hasOwn(response, "fullscreen_only"), false);
     assert.equal(broadcast.type, "settings:update");
     assert.deepEqual(broadcast.settings, response);
     client.close();
+  });
+
+  it("migrates existing dial settings to slider once", async () => {
+    // Given: an existing install with a pre-v2 dial preference.
+    const dir = await mkdtemp(path.join(tmpdir(), "metronome-db-"));
+    tempDirs.push(dir);
+    const dbPath = path.join(dir, "state.sqlite");
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        control_style TEXT NOT NULL DEFAULT 'slider',
+        theme TEXT NOT NULL DEFAULT 'auto',
+        fullscreen_only INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO settings (id, control_style, theme, fullscreen_only, updated_at)
+      VALUES (1, 'dial', 'auto', 0, 123);
+    `);
+    db.close();
+
+    // When: the store boots twice against the same database.
+    const first = new StateStore(dbPath);
+    const firstSettings = first.getSettings();
+    first.close();
+    const second = new StateStore(dbPath);
+    const secondSettings = second.getSettings();
+    const version = second.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
+
+    // Then: the one-shot migration changes dial to slider and records v2 idempotently.
+    assert.equal(firstSettings.control_style, "slider");
+    assert.equal(secondSettings.control_style, "slider");
+    assert.equal(version.value, "2");
+    second.close();
   });
 
   it("creates, lists, updates, reorders, and deletes presets", async () => {
@@ -344,11 +386,10 @@ describe("static PWA surface", () => {
     const { baseUrl } = await startTestServer();
 
     // When: the browser requests the installable app assets.
-    const [index, appScript, fullscreenScript, qrScript, tempoScript, settings, settingsScript, manifest, worker] =
+    const [index, appScript, qrScript, tempoScript, settings, settingsScript, manifest, worker] =
       await Promise.all([
       fetchText(`${baseUrl}/`),
       fetchText(`${baseUrl}/app.js`),
-      fetchText(`${baseUrl}/fullscreen.js`),
       fetchText(`${baseUrl}/qr-share.js`),
       fetchText(`${baseUrl}/tempo-controls.js`),
       fetchText(`${baseUrl}/settings`),
@@ -359,15 +400,31 @@ describe("static PWA surface", () => {
 
     // Then: the app shell and PWA files are present.
     assert.match(index, /Church Broadcast Metronome/);
+    assert.doesNotMatch(index, /fullscreen/i);
     assert.match(appScript, /tempo-control/);
-    assert.match(fullscreenScript, /exitFullscreen/);
-    assert.match(fullscreenScript, /fullscreenchange/);
+    assert.doesNotMatch(appScript, /bindFullscreenToggle|fullscreen_only/);
     assert.match(qrScript, /qrcode.min.js/);
     assert.match(tempoScript, /renderTempoControl/);
     assert.match(settings, /Settings/);
+    assert.match(settings, /Sound/);
     assert.match(settingsScript, /preset-list/);
+    assert.match(settingsScript, /sound_id/);
     assert.equal(manifest.name, "Church Broadcast Metronome");
+    assert.equal(manifest.display, "standalone");
     assert.match(worker, /install/);
+    assert.match(worker, /\.keys\(\)/);
+    assert.match(worker, /caches\.delete/);
+    assert.match(worker, /church-metronome-/);
+    assert.doesNotMatch(worker, /fullscreen\.js/);
+  });
+
+  it("has no Korean user-facing strings in public HTML or JavaScript", async () => {
+    const files = await listPublicTextFiles(path.join(process.cwd(), "public"));
+    const contents = await Promise.all(files.map(async (file) => [file, await readFile(file, "utf8")]));
+
+    const matches = contents.filter(([, text]) => /[가-힣]/u.test(text));
+
+    assert.deepEqual(matches.map(([file]) => path.relative(process.cwd(), file)), []);
   });
 });
 
@@ -451,6 +508,18 @@ async function fetchJson(url, options) {
   const response = await fetch(url, options);
   assert.ok([200, 201].includes(response.status), `Expected 200 or 201, received ${response.status}`);
   return response.json();
+}
+
+async function listPublicTextFiles(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = await Promise.all(entries.map(async (entry) => {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return listPublicTextFiles(fullPath);
+    }
+    return /\.(?:html|js)$/u.test(entry.name) ? [fullPath] : [];
+  }));
+  return files.flat();
 }
 
 function withTimeout(promise, ms, message) {
