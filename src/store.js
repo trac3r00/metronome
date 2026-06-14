@@ -79,6 +79,16 @@ export class StateStore {
     return normalized;
   }
 
+  health() {
+    const room = this.db.prepare("SELECT COUNT(*) AS count FROM room_state WHERE id = 1").get();
+    const presets = this.db.prepare("SELECT COUNT(*) AS count FROM presets").get();
+    return {
+      ok: room.count === 1,
+      room_state: room.count === 1,
+      presets_saved: presets.count,
+    };
+  }
+
   close() {
     this.db.close();
   }

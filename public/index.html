@@ -12,27 +12,42 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="stage" aria-live="polite">
-        <div class="status-line">
-          <span id="connection">Connecting</span>
+      <section class="stage" aria-label="Live metronome stage">
+        <div class="topbar">
+          <div id="connection" class="connection" aria-live="polite">
+            <span class="connection-dot" aria-hidden="true"></span>
+            <span data-status-text>Connecting</span>
+          </div>
           <button id="fullscreen" class="icon-button" type="button" aria-label="Enter fullscreen">⛶</button>
         </div>
-        <div id="flash" class="pulse-ring">
-          <div>
+        <div class="stage-center">
+          <div id="flash" class="pulse-ring" aria-hidden="true">
+            <span data-beat-label>1</span>
+          </div>
+          <div class="tempo-readout" aria-live="polite">
             <span id="bpm-display">120</span>
             <span>BPM</span>
           </div>
+          <span id="meter-display" class="meter-pill">4/4</span>
         </div>
-        <button id="play" class="play-button" type="button">Start</button>
+        <div id="message" class="message" role="status" aria-live="polite"></div>
+        <button id="play" class="play-button" type="button" aria-label="Start metronome">Start</button>
       </section>
 
       <section class="controls" aria-label="Metronome controls">
-        <label class="bpm-control">
-          <span>BPM</span>
-          <input id="bpm-range" type="range" min="30" max="300" value="120">
-          <input id="bpm-number" type="number" min="30" max="300" value="120" inputmode="numeric">
-        </label>
+        <div class="panel-heading">
+          <p>Tempo</p>
+          <span>30-300 BPM</span>
+        </div>
+        <div class="bpm-control">
+          <label for="bpm-range">BPM slider</label>
+          <input id="bpm-range" type="range" min="30" max="300" value="120" aria-label="BPM slider">
+          <input id="bpm-number" type="number" min="30" max="300" value="120" inputmode="numeric" aria-label="BPM number">
+        </div>
 
+        <div class="panel-heading compact">
+          <p>Meter</p>
+        </div>
         <div class="meter-group" role="group" aria-label="Beat meter">
           <button class="meter-button" type="button" data-meter="4/4">4/4</button>
           <button class="meter-button" type="button" data-meter="3/4">3/4</button>
@@ -40,12 +55,10 @@
         </div>
 
         <button id="tap" class="secondary-button" type="button">Tap Tempo</button>
-      </section>
 
-      <section class="presets" aria-label="Preset slots">
-        <div class="section-title">
-          <h1>Church Broadcast Metronome</h1>
-          <span id="meter-display">4/4</span>
+        <div class="panel-heading presets-heading">
+          <p>Presets</p>
+          <span>Save or recall room tempos</span>
         </div>
         <div id="preset-grid" class="preset-grid"></div>
       </section>

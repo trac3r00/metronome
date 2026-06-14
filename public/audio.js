@@ -8,10 +8,16 @@ export class AudioScheduler {
     this.state = null;
   }
 
+  async resume() {
+    this.context ??= new (window.AudioContext ?? window.webkitAudioContext)();
+    if (this.context.state === "suspended") {
+      await this.context.resume();
+    }
+  }
+
   async start(state) {
     this.state = state;
-    this.context ??= new AudioContext();
-    await this.context.resume();
+    await this.resume();
     this.nextNoteTime = this.context.currentTime + 0.05;
     this.beat = 0;
     this.timer ??= setInterval(() => this.scheduleAhead(), 25);
@@ -21,6 +27,13 @@ export class AudioScheduler {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+    }
+  }
+
+  async suspend() {
+    this.stop();
+    if (this.context?.state === "running") {
+      await this.context.suspend();
     }
   }
 

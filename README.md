@@ -2,17 +2,51 @@
 
 A single-room synchronized metronome for church broadcast teams. The server is the source of truth for BPM, meter, playback state, and preset slots, and every browser stays in sync over WebSockets.
 
+## Screenshot
+
+Screenshot placeholder: add `artifacts/screenshot.png` after capturing the deployed tablet view.
+
+## Features
+
+- Large broadcast-friendly BPM stage with beat pulse visualization.
+- Meter controls for `4/4`, `3/4`, and `6/8`.
+- BPM slider, numeric BPM entry, tap tempo, and fullscreen mode.
+- Ten preset slots that store BPM plus meter.
+- WebSocket sync across phones, tablets, and booth computers.
+- Automatic WebSocket reconnect with exponential backoff.
+- Offline fallback for local-only operation from the service worker cache.
+- AudioContext resume/suspend handling for mobile Safari and background tabs.
+- Server-side message validation, payload limits, burst rate limiting, SQLite persistence, and `/healthz`.
+
+## Environment Variables
+
+| Name | Default | Description |
+| --- | --- | --- |
+| `PORT` | `3000` | HTTP and WebSocket port. |
+| `HOST` | `0.0.0.0` | Bind address for the Node server. |
+| `METRONOME_DB_PATH` | `./data/metronome.sqlite` | SQLite file used for room state and presets. |
+
 ## Run with Docker
 
 ```bash
-docker-compose up -d
+docker compose build
+docker compose up -d
+curl -fsS http://localhost:3000/healthz
 ```
 
 Open `http://localhost:3000`. Docker probes `http://127.0.0.1:3000/healthz` and should show the container as healthy after startup.
 
 The compose file stores SQLite data in the `metronome-data` volume so preset slots survive container restarts.
 
-## Local development
+## NAS Deployment Notes
+
+- Use the provided `docker-compose.yml` on Synology, Unraid, TrueNAS Scale, or another NAS with Docker Compose support.
+- Keep port `3000` mapped only to the trusted church LAN unless the app is placed behind an authenticated reverse proxy.
+- Back up the `metronome-data` volume if preset slots matter operationally.
+- For reverse proxies, forward WebSocket upgrade headers to `/ws` and regular HTTP traffic to `/`.
+- The health check endpoint returns JSON with both app and store status, so NAS dashboards can alert on database issues.
+
+## Local Development
 
 ```bash
 npm install
@@ -20,7 +54,7 @@ npm test
 npm start
 ```
 
-The local app also runs at `http://localhost:3000` by default. Set `PORT` or `METRONOME_DB_PATH` to override the port or SQLite file.
+The local app also runs at `http://localhost:3000` by default.
 
 ## Usage
 
@@ -29,6 +63,7 @@ The local app also runs at `http://localhost:3000` by default. Set `PORT` or `ME
 - Choose `4/4`, `3/4`, or `6/8` with the meter buttons.
 - Use `Tap Tempo` to estimate BPM from repeated taps.
 - Use the fullscreen button on mobile or tablet broadcast stations for a focused stage view.
+- If the booth network drops, the cached app can keep a local tempo until the room reconnects.
 
 ## Presets
 
