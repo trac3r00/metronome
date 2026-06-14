@@ -1,8 +1,30 @@
+export const SOUND_OPTIONS = Object.freeze([
+  { id: "classic", name: "Classic Click" },
+  { id: "wood", name: "Wood Block" },
+  { id: "digital", name: "Digital Beep" },
+  { id: "cowbell", name: "Cowbell" },
+  { id: "tick", name: "Soft Tick" },
+]);
+
+export const SOUNDS = Object.freeze({
+  classic: (context, downbeat) => createTone(context, downbeat ? 1568 : 1046.5, "sine"),
+  wood: (context, downbeat) => createTone(context, downbeat ? 800 : 600, "triangle"),
+  digital: (context, downbeat) => createTone(context, downbeat ? 2000 : 1500, "square"),
+  cowbell: (context, downbeat) => (downbeat ? createCowbell(context) : createTone(context, 540, "square")),
+  tick: (context) => createNoiseTick(context),
+});
+
+const DEFAULT_SOUND_ID = "classic";
+const DEFAULT_VOLUME = 80;
+
 export class AudioScheduler {
-  constructor(onBeat) {
+  constructor(onBeat, { soundId = DEFAULT_SOUND_ID, volume = DEFAULT_VOLUME } = {}) {
     this.onBeat = onBeat;
+    this.soundId = resolveSoundId(soundId);
+    this.volume = resolveVolume(volume);
     this.context = null;
     this.timer = null;
+    this.previewTimers = [];
     this.nextNoteTime = 0;
     this.beat = 0;
     this.state = null;
@@ -41,6 +63,32 @@ export class AudioScheduler {
     this.state = state;
   }
 
+  setSound(soundId) {
+    this.soundId = resolveSoundId(soundId);
+  }
+
+  setVolume(volume) {
+    this.volume = resolveVolume(volume);
+  }
+
+  async playPreview({ soundId = this.soundId, volume = this.volume } = {}) {
+    await this.resume();
+    const previousSound = this.soundId;
+    const previousVolume = this.volume;
+    this.setSound(soundId);
+    this.setVolume(volume);
+    this.clearPreviewTimers();
+    const startAt = this.context.currentTime + 0.03;
+    [true, false, false, false].forEach((downbeat, index) => {
+      this.scheduleClick(startAt + index * 0.22, downbeat);
+    });
+    const timer = setTimeout(() => {
+      this.setSound(previousSound);
+      this.setVolume(previousVolume);
+    }, 1000);
+    this.previewTimers.push(timer);
+  }
+
   scheduleAhead() {
     if (!this.context || !this.state) {
       return;
@@ -54,15 +102,94 @@ export class AudioScheduler {
   }
 
   scheduleClick(time, downbeat) {
-    const oscillator = this.context.createOscillator();
+    const source = SOUNDS[this.soundId](this.context, downbeat);
     const gain = this.context.createGain();
-    oscillator.frequency.value = downbeat ? 1568 : 1046.5;
+    const peak = Math.max(0.0001, (downbeat ? 0.55 : 0.32) * (this.volume / 100));
+    const decay = getDecaySeconds(this.soundId, downbeat);
     gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.exponentialRampToValueAtTime(downbeat ? 0.55 : 0.32, time + 0.004);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.055);
-    oscillator.connect(gain);
+    gain.gain.exponentialRampToValueAtTime(peak, time + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + decay);
+    connectSource(source, gain);
     gain.connect(this.context.destination);
-    oscillator.start(time);
-    oscillator.stop(time + 0.06);
+    source.start(time);
+    source.stop(time + decay + 0.005);
   }
+
+  clearPreviewTimers() {
+    for (const timer of this.previewTimers) {
+      clearTimeout(timer);
+    }
+    this.previewTimers = [];
+  }
+}
+
+function createTone(context, frequency, type) {
+  const oscillator = context.createOscillator();
+  oscillator.frequency.value = frequency;
+  oscillator.type = type;
+  return oscillator;
+}
+
+function createCowbell(context) {
+  const output = context.createGain();
+  const low = createTone(context, 540, "square");
+  const high = createTone(context, 800, "square");
+  low.connect(output);
+  high.connect(output);
+  output.start = (time) => {
+    low.start(time);
+    high.start(time);
+  };
+  output.stop = (time) => {
+    low.stop(time);
+    high.stop(time);
+  };
+  return output;
+}
+
+function createNoiseTick(context) {
+  const length = Math.ceil(context.sampleRate * 0.008);
+  const buffer = context.createBuffer(1, length, context.sampleRate);
+  const samples = buffer.getChannelData(0);
+  for (let index = 0; index < length; index += 1) {
+    samples[index] = Math.random() * 2 - 1;
+  }
+  const source = context.createBufferSource();
+  const filter = context.createBiquadFilter();
+  filter.type = "highpass";
+  filter.frequency.value = 4000;
+  source.buffer = buffer;
+  source.connect(filter);
+  source.output = filter;
+  return source;
+}
+
+function connectSource(source, destination) {
+  if (source.output) {
+    source.output.connect(destination);
+    return;
+  }
+  source.connect(destination);
+}
+
+function getDecaySeconds(soundId, downbeat) {
+  if (soundId === "tick") {
+    return downbeat ? 0.035 : 0.025;
+  }
+  if (soundId === "wood") {
+    return downbeat ? 0.075 : 0.055;
+  }
+  return downbeat ? 0.06 : 0.05;
+}
+
+function resolveSoundId(soundId) {
+  return SOUNDS[soundId] ? soundId : DEFAULT_SOUND_ID;
+}
+
+function resolveVolume(volume) {
+  const numeric = Number(volume);
+  if (!Number.isFinite(numeric)) {
+    return DEFAULT_VOLUME;
+  }
+  return Math.min(100, Math.max(0, Math.round(numeric)));
 }

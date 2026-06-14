@@ -10,7 +10,7 @@ Screenshot placeholder: add `artifacts/screenshot.png` after capturing the deplo
 
 - Large broadcast-friendly BPM stage with beat pulse visualization.
 - Meter controls for `4/4`, `3/4`, and `6/8`.
-- BPM slider, numeric BPM entry, tap tempo, and fullscreen mode.
+- BPM slider, numeric BPM entry, tap tempo, and selectable metronome sounds.
 - Ten preset slots that store BPM plus meter.
 - WebSocket sync across phones, tablets, and booth computers.
 - Automatic WebSocket reconnect with exponential backoff.
@@ -62,7 +62,7 @@ The local app also runs at `http://localhost:3000` by default.
 - Use `Start` and `Stop` to control playback for every connected client.
 - Choose `4/4`, `3/4`, or `6/8` with the meter buttons.
 - Use `Tap Tempo` to estimate BPM from repeated taps.
-- Use the fullscreen button on mobile or tablet broadcast stations for a focused stage view.
+- Choose a click sound and volume from Settings before rehearsal starts.
 - If the booth network drops, the cached app can keep a local tempo until the room reconnects.
 
 ## Presets
@@ -74,4 +74,8 @@ Slots 1-10 store BPM plus meter. Press `Save` on a slot to overwrite it with the
 - Node.js 20-compatible Express server for static files.
 - `ws` WebSocket server at `/ws` for state sync.
 - `better-sqlite3` persistence for room state and preset slots.
+
+## TODO
+
+- Preset UX simplification: easier add, edit, and reorder controls on the main page belong in a separate PR.
 - Static vanilla JS PWA client with a Web Audio scheduler based on `AudioContext.currentTime`.

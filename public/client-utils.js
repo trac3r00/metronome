@@ -3,6 +3,8 @@ export const MAX_BPM = 300;
 export const MIN_TAP_MS = 200;
 export const MAX_TAP_MS = 2000;
 export const MAX_RECONNECT_DELAY_MS = 30000;
+export const PRESET_TAP_MOVE_PX = 8;
+export const PRESET_TAP_MAX_MS = 500;
 
 export function parseBpmInput(value) {
   const numeric = Number(value);
@@ -38,6 +40,39 @@ export function nextTapTempo(previousTaps, now) {
   const gaps = taps.slice(1).map((time, index) => time - taps[index]);
   const averageGap = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
   return { taps, bpm: parseBpmInput(60000 / averageGap).bpm, ignored: false };
+}
+
+export function createPresetTapGesture(onTap, { moveTolerancePx = PRESET_TAP_MOVE_PX, maxDurationMs = PRESET_TAP_MAX_MS } = {}) {
+  let startX = 0;
+  let startY = 0;
+  let startTime = 0;
+  let dragged = false;
+
+  return {
+    pointerDown(event) {
+      startX = event.clientX;
+      startY = event.clientY;
+      startTime = event.timeStamp ?? Date.now();
+      dragged = false;
+    },
+    pointerMove(event) {
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (Math.hypot(dx, dy) > moveTolerancePx) {
+        dragged = true;
+      }
+    },
+    pointerUp(event) {
+      const elapsed = (event.timeStamp ?? Date.now()) - startTime;
+      if (!dragged && elapsed <= maxDurationMs) {
+        onTap(event);
+      }
+      dragged = false;
+    },
+    pointerCancel() {
+      dragged = false;
+    },
+  };
 }
 
 export function applyLocalMessage(state, message) {
