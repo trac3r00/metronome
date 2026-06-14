@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   applyLocalMessage,
+  createPresetTapGesture,
   getReconnectDelayMs,
   nextTapTempo,
   parseBpmInput,
@@ -117,5 +118,25 @@ describe("client guard helpers", () => {
     assert.equal(applied.bpm, 140);
     assert.equal(applied.beats_per_bar, 6);
     assert.equal(applied.beat_unit, 8);
+  });
+
+  it("ignores preset taps after horizontal drag or long press gestures", () => {
+    let taps = 0;
+    const gesture = createPresetTapGesture(() => {
+      taps += 1;
+    });
+
+    gesture.pointerDown({ clientX: 10, clientY: 10, timeStamp: 1000 });
+    gesture.pointerMove({ clientX: 19, clientY: 10, timeStamp: 1010 });
+    gesture.pointerUp({ clientX: 19, clientY: 10, timeStamp: 1020 });
+
+    gesture.pointerDown({ clientX: 10, clientY: 10, timeStamp: 2000 });
+    gesture.pointerUp({ clientX: 10, clientY: 10, timeStamp: 2510 });
+
+    gesture.pointerDown({ clientX: 10, clientY: 10, timeStamp: 3000 });
+    gesture.pointerMove({ clientX: 16, clientY: 14, timeStamp: 3010 });
+    gesture.pointerUp({ clientX: 16, clientY: 14, timeStamp: 3020 });
+
+    assert.equal(taps, 1);
   });
 });

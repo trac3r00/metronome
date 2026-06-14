@@ -1,3 +1,5 @@
+import { AudioScheduler, SOUND_OPTIONS } from "./audio.js";
+
 const controls = [
   { id: "dial", label: "Dial", preview: "circle" },
   { id: "slider", label: "Slider", preview: "line" },
@@ -11,6 +13,9 @@ const elements = {
   presetList: document.querySelector("#preset-list"),
   addPreset: document.querySelector("#add-preset"),
   controlStyles: document.querySelector("#control-styles"),
+  soundOptions: document.querySelector("#sound-options"),
+  volumeSlider: document.querySelector("#volume-slider"),
+  volumeValue: document.querySelector("#volume-value"),
   theme: document.querySelector("#theme-select"),
   lastSynced: document.querySelector("#last-synced"),
   forceResync: document.querySelector("#force-resync"),
@@ -26,10 +31,14 @@ const elements = {
 let settings = {
   control_style: "slider",
   theme: "auto",
+  sound_id: "classic",
+  volume: 80,
   updated_at: null,
   presets: [],
 };
 let socket = null;
+let volumeSaveTimer = null;
+const previewScheduler = new AudioScheduler(() => {}, { soundId: settings.sound_id, volume: settings.volume });
 
 bindEvents();
 renderControlStyles();
@@ -40,6 +49,8 @@ function bindEvents() {
   elements.addPreset.addEventListener("click", () => openPresetModal());
   elements.form.addEventListener("submit", savePreset);
   elements.theme.addEventListener("change", () => saveSettings({ theme: elements.theme.value }));
+  elements.volumeSlider.addEventListener("input", handleVolumeInput);
+  elements.volumeSlider.addEventListener("change", () => saveSettings({ volume: Number(elements.volumeSlider.value) }));
   elements.forceResync.addEventListener("click", loadSettings);
   window.addEventListener("online", connect);
   window.addEventListener("offline", () => setConnection("offline", "Offline"));
@@ -88,7 +99,12 @@ function applySettings(nextSettings) {
   settings = { ...settings, ...nextSettings };
   document.documentElement.dataset.theme = settings.theme;
   elements.theme.value = settings.theme;
+  elements.volumeSlider.value = String(settings.volume);
+  elements.volumeValue.textContent = `${settings.volume}%`;
+  previewScheduler.setSound(settings.sound_id);
+  previewScheduler.setVolume(settings.volume);
   renderControlStyles();
+  renderSoundOptions();
   renderPresets();
   markSynced();
 }
@@ -118,6 +134,59 @@ function renderControlStyles() {
     `;
     card.addEventListener("click", () => saveSettings({ control_style: control.id }));
     elements.controlStyles.append(card);
+  }
+}
+
+function renderSoundOptions() {
+  elements.soundOptions.replaceChildren();
+  for (const sound of SOUND_OPTIONS) {
+    const card = document.createElement("div");
+    card.className = "radio-card sound-card";
+    card.tabIndex = 0;
+    card.setAttribute("role", "radio");
+    card.setAttribute("aria-checked", String(settings.sound_id === sound.id));
+    card.innerHTML = `
+      <span class="sound-mark ${sound.id}" aria-hidden="true"></span>
+      <strong>${sound.name}</strong>
+      <span>${sound.id}</span>
+    `;
+    const playButton = document.createElement("button");
+    playButton.className = "small-button ghost";
+    playButton.type = "button";
+    playButton.textContent = "Play";
+    playButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      previewSound(sound.id);
+    });
+    card.append(playButton);
+    card.addEventListener("click", () => {
+      saveSettings({ sound_id: sound.id });
+    });
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        saveSettings({ sound_id: sound.id });
+      }
+    });
+    elements.soundOptions.append(card);
+  }
+}
+
+function handleVolumeInput() {
+  const volume = Number(elements.volumeSlider.value);
+  settings = { ...settings, volume };
+  elements.volumeValue.textContent = `${volume}%`;
+  previewScheduler.setVolume(volume);
+  previewSound(settings.sound_id);
+  clearTimeout(volumeSaveTimer);
+  volumeSaveTimer = setTimeout(() => saveSettings({ volume }), 180);
+}
+
+async function previewSound(soundId = settings.sound_id) {
+  try {
+    await previewScheduler.playPreview({ soundId, volume: Number(elements.volumeSlider.value) });
+  } catch {
+    setConnection("offline", "Audio blocked");
   }
 }
 

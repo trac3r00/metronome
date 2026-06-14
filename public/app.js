@@ -1,6 +1,11 @@
 import { AudioScheduler } from "./audio.js";
-import { applyLocalMessage, getReconnectDelayMs, nextTapTempo, parseBpmInput } from "./client-utils.js";
-import { bindFullscreenToggle } from "./fullscreen.js";
+import {
+  applyLocalMessage,
+  createPresetTapGesture,
+  getReconnectDelayMs,
+  nextTapTempo,
+  parseBpmInput,
+} from "./client-utils.js";
 import { bindShareModal } from "./qr-share.js";
 import { renderTempoControl, syncTempoControl } from "./tempo-controls.js";
 
@@ -17,7 +22,6 @@ const elements = {
   connection: document.querySelector("#connection"),
   statusText: document.querySelector("[data-status-text]"),
   share: document.querySelector("#share"),
-  fullscreen: document.querySelector("#fullscreen"),
   beatIndicator: document.querySelector("#beat-indicator"),
   bpmDisplay: document.querySelector("#bpm-display"),
   bpmMinus: document.querySelector("#bpm-minus"),
@@ -39,7 +43,7 @@ const elements = {
 const scheduler = new AudioScheduler((beat, delay) => flashBeat(beat, delay));
 let socket = null;
 let state = createInitialState();
-let settings = { control_style: "slider", theme: "auto", updated_at: null };
+let settings = { control_style: "slider", theme: "auto", sound_id: "classic", volume: 80, updated_at: null };
 let presets = [];
 let tapTimes = [];
 let reconnectAttempt = 0;
@@ -59,7 +63,6 @@ loadPresets();
 connect();
 
 function bindControls() {
-  bindFullscreenToggle(elements.fullscreen);
   bindShareModal({
     openButton: elements.share,
     modal: elements.shareModal,
@@ -213,6 +216,8 @@ async function togglePlayback() {
 function applySettings(nextSettings) {
   settings = { ...settings, ...nextSettings };
   presets = nextSettings.presets ?? presets;
+  scheduler.setSound(settings.sound_id);
+  scheduler.setVolume(settings.volume);
   applyTheme();
   renderCurrentTempoControl();
   renderPresets();
@@ -290,11 +295,22 @@ function renderPresets() {
     button.className = "preset-chip";
     button.dataset.presetId = preset.id;
     button.innerHTML = `<strong>${preset.bpm}</strong><span>${preset.meter}</span>`;
-    button.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
+    const gesture = createPresetTapGesture((event) => {
       button.classList.add("flash");
       setTimeout(() => button.classList.remove("flash"), 150);
       sendDiscrete({ type: "apply_preset", bpm: preset.bpm, meter: preset.meter });
+    });
+    button.addEventListener("pointerdown", (event) => {
+      gesture.pointerDown(event);
+    });
+    button.addEventListener("pointermove", (event) => {
+      gesture.pointerMove(event);
+    });
+    button.addEventListener("pointerup", (event) => {
+      gesture.pointerUp(event);
+    });
+    button.addEventListener("pointercancel", () => {
+      gesture.pointerCancel();
     });
     button.addEventListener("contextmenu", (event) => {
       event.preventDefault();

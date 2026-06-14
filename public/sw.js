@@ -1,8 +1,7 @@
-const CACHE_NAME = "church-metronome-v2";
+const CACHE_NAME = "church-metronome-v3";
 const ASSETS = [
   "/",
   "/app.js",
-  "/fullscreen.js",
   "/tempo-controls.js",
   "/qr-share.js",
   "/settings",
@@ -22,7 +21,18 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches
+      .keys()
+      .then((names) =>
+        Promise.all(
+          names
+            .filter((name) => name.startsWith("church-metronome-") && name !== CACHE_NAME)
+            .map((name) => caches.delete(name)),
+        ),
+      )
+      .then(() => self.clients.claim()),
+  );
 });
 
 self.addEventListener("fetch", (event) => {

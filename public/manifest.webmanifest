@@ -3,7 +3,7 @@
   "short_name": "Metronome",
   "start_url": "/",
   "scope": "/",
-  "display": "fullscreen",
+  "display": "standalone",
   "background_color": "#F0FDFA",
   "theme_color": "#0D9488",
   "icons": [
