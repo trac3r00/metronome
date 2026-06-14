@@ -1,6 +1,6 @@
 let qrLibraryPromise = null;
 
-export function bindShareModal({ openButton, modal, qrTarget, urlText, copyButton, closeButton }) {
+export function bindShareModal({ openButton, modal, qrTarget, urlText, copyButton, closeButton, nativeShareButton }) {
   const getShareUrl = () => `${window.location.origin}/`;
 
   const open = async () => {
@@ -19,6 +19,10 @@ export function bindShareModal({ openButton, modal, qrTarget, urlText, copyButto
 
   const close = () => modal.close();
 
+  if (nativeShareButton) {
+    nativeShareButton.hidden = !hasNativeShare(navigator);
+  }
+
   openButton.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     open().catch(() => {
@@ -34,11 +38,29 @@ export function bindShareModal({ openButton, modal, qrTarget, urlText, copyButto
     event.preventDefault();
     copyText(getShareUrl()).catch(() => {});
   });
+  nativeShareButton?.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    if (!hasNativeShare(navigator)) {
+      return;
+    }
+    navigator.share(getNativeSharePayload(window.location)).catch(() => {});
+  });
   modal.addEventListener("pointerdown", (event) => {
     if (event.target === modal) {
       close();
     }
   });
+}
+
+export function hasNativeShare(navigatorLike) {
+  return typeof navigatorLike?.share === "function";
+}
+
+export function getNativeSharePayload(locationLike) {
+  return {
+    title: "Church Metronome",
+    url: locationLike.href,
+  };
 }
 
 function loadQrLibrary() {

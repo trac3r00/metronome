@@ -26,6 +26,18 @@ describe("audio scheduler sounds", () => {
     assert.equal(context.oscillators[1].type, "square");
   });
 
+  it("reports whether the scheduler loop is running", async () => {
+    globalThis.window = { AudioContext: FakeAudioContext };
+    const scheduler = new AudioScheduler(() => {}, { soundId: "classic", volume: 80 });
+
+    assert.equal(scheduler.isRunning, false);
+    await scheduler.start({ bpm: 120, beats_per_bar: 4, beat_unit: 4 });
+    assert.equal(scheduler.isRunning, true);
+    scheduler.stop();
+    assert.equal(scheduler.isRunning, false);
+    delete globalThis.window;
+  });
+
   it("creates noise-buffer output for soft tick", () => {
     const context = new FakeAudioContext();
     const node = SOUNDS.tick(context, false);

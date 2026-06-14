@@ -52,6 +52,10 @@ export class AudioScheduler {
     }
   }
 
+  get isRunning() {
+    return Boolean(this.timer);
+  }
+
   async suspend() {
     this.stop();
     if (this.context?.state === "running") {
