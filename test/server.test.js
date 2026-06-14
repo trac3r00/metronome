@@ -139,6 +139,125 @@ describe("server websocket sync", () => {
   });
 });
 
+describe("server settings and preset sync", () => {
+  it("returns default settings and seeded presets on a fresh database", async () => {
+    // Given: a fresh server database.
+    const { baseUrl } = await startTestServer();
+
+    // When: the settings endpoint is requested.
+    const settings = await fetchJson(`${baseUrl}/api/settings`);
+
+    // Then: server defaults include dial control, auto theme, and five ordered presets.
+    assert.equal(settings.control_style, "dial");
+    assert.equal(settings.theme, "auto");
+    assert.deepEqual(
+      settings.presets.map(({ bpm, meter, name, position }) => ({ bpm, meter, name, position })),
+      [
+        { bpm: 60, meter: "4/4", name: null, position: 0 },
+        { bpm: 80, meter: "4/4", name: null, position: 1 },
+        { bpm: 100, meter: "4/4", name: null, position: 2 },
+        { bpm: 120, meter: "4/4", name: null, position: 3 },
+        { bpm: 140, meter: "4/4", name: null, position: 4 },
+      ],
+    );
+  });
+
+  it("updates settings and broadcasts the new settings to websocket clients", async () => {
+    // Given: a connected websocket client.
+    const { baseUrl, wsUrl } = await startTestServer();
+    const { socket: client } = await openClientWithInitial(wsUrl);
+
+    // When: settings are updated through the REST API.
+    const response = await fetchJson(`${baseUrl}/api/settings`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ control_style: "wheel", theme: "dark" }),
+    });
+    const broadcast = await readJson(client);
+
+    // Then: the response and websocket broadcast expose the persisted settings.
+    assert.equal(response.control_style, "wheel");
+    assert.equal(response.theme, "dark");
+    assert.equal(broadcast.type, "settings:update");
+    assert.deepEqual(broadcast.settings, response);
+    client.close();
+  });
+
+  it("creates, lists, updates, reorders, and deletes presets", async () => {
+    // Given: a running server with seeded presets.
+    const { baseUrl, wsUrl } = await startTestServer();
+    const { socket: client } = await openClientWithInitial(wsUrl);
+
+    // When: a preset is created and then updated.
+    const created = await fetchJson(`${baseUrl}/api/presets`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ bpm: 72, meter: "3/4", name: "Prayer" }),
+    });
+    const createBroadcast = await readJson(client);
+    const updated = await fetchJson(`${baseUrl}/api/presets/${created.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ bpm: 76, meter: "6/8", name: "Benediction" }),
+    });
+    const updateBroadcast = await readJson(client);
+
+    // Then: list ordering, update values, broadcasts, reorder, and delete are all consistent.
+    assert.equal(created.position, 5);
+    assert.equal(createBroadcast.type, "presets:update");
+    assert.equal(createBroadcast.presets.at(-1).name, "Prayer");
+    assert.deepEqual(
+      { bpm: updated.bpm, meter: updated.meter, name: updated.name },
+      { bpm: 76, meter: "6/8", name: "Benediction" },
+    );
+    assert.equal(updateBroadcast.type, "presets:update");
+
+    const listed = await fetchJson(`${baseUrl}/api/presets`);
+    const reorderedIds = [created.id, ...listed.filter((preset) => preset.id !== created.id).map((preset) => preset.id)];
+    const reordered = await fetchJson(`${baseUrl}/api/presets/reorder`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: reorderedIds }),
+    });
+    await readJson(client);
+    assert.equal(reordered[0].id, created.id);
+    assert.deepEqual(
+      reordered.map((preset) => preset.position),
+      reordered.map((_, index) => index),
+    );
+
+    const deleteResponse = await fetch(`${baseUrl}/api/presets/${created.id}`, { method: "DELETE" });
+    assert.equal(deleteResponse.status, 204);
+    const deleteBroadcast = await readJson(client);
+    assert.equal(deleteBroadcast.type, "presets:update");
+    assert.equal(deleteBroadcast.presets.some((preset) => preset.id === created.id), false);
+    client.close();
+  });
+
+  it("seeds default presets only when the presets table is empty", async () => {
+    // Given: a persistent database after one preset has been deleted.
+    const dir = await mkdtemp(path.join(tmpdir(), "metronome-db-"));
+    tempDirs.push(dir);
+    const dbPath = path.join(dir, "state.sqlite");
+    const firstServer = await startTestServer(dbPath);
+    const presets = await fetchJson(`${firstServer.baseUrl}/api/presets`);
+    const deleteResponse = await fetch(`${firstServer.baseUrl}/api/presets/${presets[0].id}`, { method: "DELETE" });
+    assert.equal(deleteResponse.status, 204);
+    await firstServer.close();
+
+    // When: the server is reopened against the same non-empty presets table.
+    const secondServer = await startTestServer(dbPath);
+    const reopenedPresets = await fetchJson(`${secondServer.baseUrl}/api/presets`);
+
+    // Then: the deleted row is not re-seeded.
+    assert.equal(reopenedPresets.length, 4);
+    assert.deepEqual(
+      reopenedPresets.map((preset) => preset.bpm),
+      [80, 100, 120, 140],
+    );
+  });
+});
+
 describe("static PWA surface", () => {
   it("serves a health endpoint for Docker health checks", async () => {
     // Given: a running server.
@@ -156,19 +275,36 @@ describe("static PWA surface", () => {
     });
   });
 
+  it("serves the current room state through the compatibility REST endpoint", async () => {
+    const { baseUrl } = await startTestServer();
+
+    const state = await fetchJson(`${baseUrl}/api/state`);
+
+    assert.equal(state.bpm, 120);
+    assert.equal(state.beats_per_bar, 4);
+    assert.equal(state.beat_unit, 4);
+    assert.equal(state.playing, false);
+  });
+
   it("serves the static client, manifest, and service worker", async () => {
     // Given: a running server.
     const { baseUrl } = await startTestServer();
 
     // When: the browser requests the installable app assets.
-    const [index, manifest, worker] = await Promise.all([
+    const [index, appScript, settings, settingsScript, manifest, worker] = await Promise.all([
       fetchText(`${baseUrl}/`),
+      fetchText(`${baseUrl}/app.js`),
+      fetchText(`${baseUrl}/settings`),
+      fetchText(`${baseUrl}/settings.js`),
       fetchJson(`${baseUrl}/manifest.webmanifest`),
       fetchText(`${baseUrl}/sw.js`),
     ]);
 
     // Then: the app shell and PWA files are present.
     assert.match(index, /Church Broadcast Metronome/);
+    assert.match(appScript, /tempo-control/);
+    assert.match(settings, /Settings/);
+    assert.match(settingsScript, /preset-list/);
     assert.equal(manifest.name, "Church Broadcast Metronome");
     assert.match(worker, /install/);
   });
@@ -250,9 +386,9 @@ async function fetchText(url) {
   return response.text();
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url);
-  assert.equal(response.status, 200);
+async function fetchJson(url, options) {
+  const response = await fetch(url, options);
+  assert.ok([200, 201].includes(response.status), `Expected 200 or 201, received ${response.status}`);
   return response.json();
 }
 

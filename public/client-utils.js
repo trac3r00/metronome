@@ -1,7 +1,7 @@
 export const MIN_BPM = 30;
 export const MAX_BPM = 300;
 export const MIN_TAP_MS = 200;
-export const MAX_TAP_MS = 3000;
+export const MAX_TAP_MS = 2000;
 export const MAX_RECONNECT_DELAY_MS = 30000;
 
 export function parseBpmInput(value) {
