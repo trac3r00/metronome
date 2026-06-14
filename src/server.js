@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import WebSocket, { WebSocketServer } from "ws";
 
+import { createRateLimiter, isRateLimited } from "./rate-limiter.js";
 import { reduceMessage, ValidationError } from "./state.js";
 import { StateStore, StoreValidationError } from "./store.js";
 
@@ -12,9 +13,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
 const DEFAULT_DB_PATH = process.env.METRONOME_DB_PATH ?? path.join(process.cwd(), "data", "metronome.sqlite");
 const WS_MAX_PAYLOAD_BYTES = 4096;
-const RATE_LIMIT_WINDOW_MS = 100;
-const RATE_LIMIT_MAX_MESSAGES = 10;
-const RATE_LIMIT_BLOCK_MS = 2000;
 
 export function createAppServer({ dbPath = DEFAULT_DB_PATH } = {}) {
   const app = express();
@@ -191,30 +189,6 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH } = {}) {
       return closePromise;
     },
   };
-}
-
-function createRateLimiter() {
-  return {
-    windowStartedAt: 0,
-    messageCount: 0,
-    blockedUntil: 0,
-  };
-}
-
-function isRateLimited(limiter, now = Date.now()) {
-  if (now < limiter.blockedUntil) {
-    return true;
-  }
-  if (now - limiter.windowStartedAt > RATE_LIMIT_WINDOW_MS) {
-    limiter.windowStartedAt = now;
-    limiter.messageCount = 0;
-  }
-  limiter.messageCount += 1;
-  if (limiter.messageCount <= RATE_LIMIT_MAX_MESSAGES) {
-    return false;
-  }
-  limiter.blockedUntil = now + RATE_LIMIT_BLOCK_MS;
-  return true;
 }
 
 function broadcastState(wss, state) {

@@ -113,16 +113,69 @@ describe("server websocket sync", () => {
     const appServer = await startTestServer();
     const { socket: client } = await openClientWithInitial(appServer.wsUrl);
 
-    // When: the client sends more than ten messages immediately.
-    for (let index = 0; index < 11; index += 1) {
+    // When: the client sends far more than a realistic one-second tempo drag.
+    for (let index = 0; index < 200; index += 1) {
       client.send(JSON.stringify({ type: "set_bpm", bpm: 100 + index }));
     }
-    const messages = await readJsonMessages(client, 11);
+    const messages = await readJsonMessages(client, 200);
 
     // Then: the burst is rejected with a rate-limit error.
-    assert.equal(messages.at(-1).type, "error");
-    assert.match(messages.at(-1).message, /Rate limit exceeded/);
+    assert.ok(messages.some((message) => message.type === "error" && /Rate limit exceeded/.test(message.message)));
     client.close();
+  });
+
+  it("allows fifty tempo updates inside one second without rate limiting", async () => {
+    // Given: a connected websocket client.
+    const appServer = await startTestServer();
+    const { socket: client } = await openClientWithInitial(appServer.wsUrl);
+
+    // When: a realistic drag emits fifty BPM updates in one burst.
+    for (let index = 0; index < 50; index += 1) {
+      client.send(JSON.stringify({ type: "set_bpm", bpm: 100 + index }));
+    }
+    const messages = await readJsonMessages(client, 50);
+
+    // Then: every response is a state update, not a rate-limit error.
+    assert.equal(messages.some((message) => message.type === "error"), false);
+    assert.equal(messages.at(-1).state.bpm, 149);
+    client.close();
+  });
+
+  it("broadcasts meter changes to every websocket client", async () => {
+    // Given: two connected websocket clients.
+    const appServer = await startTestServer();
+    const { socket: first } = await openClientWithInitial(appServer.wsUrl);
+    const { socket: second } = await openClientWithInitial(appServer.wsUrl);
+
+    // When: one client changes meter.
+    second.send(JSON.stringify({ type: "set_meter", beats_per_bar: 6, beat_unit: 8 }));
+    const broadcast = await readJson(first);
+
+    // Then: the other client receives the new meter.
+    assert.equal(broadcast.type, "state");
+    assert.equal(broadcast.state.beats_per_bar, 6);
+    assert.equal(broadcast.state.beat_unit, 8);
+    first.close();
+    second.close();
+  });
+
+  it("broadcasts settings preset taps as one bpm and meter update", async () => {
+    // Given: two connected websocket clients.
+    const appServer = await startTestServer();
+    const { socket: first } = await openClientWithInitial(appServer.wsUrl);
+    const { socket: second } = await openClientWithInitial(appServer.wsUrl);
+
+    // When: one client taps a settings preset on the stage.
+    second.send(JSON.stringify({ type: "apply_preset", bpm: 140, meter: "6/8" }));
+    const broadcast = await readJson(first);
+
+    // Then: the other client receives BPM and meter together.
+    assert.equal(broadcast.type, "state");
+    assert.equal(broadcast.state.bpm, 140);
+    assert.equal(broadcast.state.beats_per_bar, 6);
+    assert.equal(broadcast.state.beat_unit, 8);
+    first.close();
+    second.close();
   });
 
   it("closes websocket clients that exceed the payload cap", async () => {
@@ -147,8 +200,8 @@ describe("server settings and preset sync", () => {
     // When: the settings endpoint is requested.
     const settings = await fetchJson(`${baseUrl}/api/settings`);
 
-    // Then: server defaults include dial control, auto theme, and five ordered presets.
-    assert.equal(settings.control_style, "dial");
+    // Then: server defaults include slider control, auto theme, and five ordered presets.
+    assert.equal(settings.control_style, "slider");
     assert.equal(settings.theme, "auto");
     assert.deepEqual(
       settings.presets.map(({ bpm, meter, name, position }) => ({ bpm, meter, name, position })),
@@ -291,9 +344,13 @@ describe("static PWA surface", () => {
     const { baseUrl } = await startTestServer();
 
     // When: the browser requests the installable app assets.
-    const [index, appScript, settings, settingsScript, manifest, worker] = await Promise.all([
+    const [index, appScript, fullscreenScript, qrScript, tempoScript, settings, settingsScript, manifest, worker] =
+      await Promise.all([
       fetchText(`${baseUrl}/`),
       fetchText(`${baseUrl}/app.js`),
+      fetchText(`${baseUrl}/fullscreen.js`),
+      fetchText(`${baseUrl}/qr-share.js`),
+      fetchText(`${baseUrl}/tempo-controls.js`),
       fetchText(`${baseUrl}/settings`),
       fetchText(`${baseUrl}/settings.js`),
       fetchJson(`${baseUrl}/manifest.webmanifest`),
@@ -303,6 +360,10 @@ describe("static PWA surface", () => {
     // Then: the app shell and PWA files are present.
     assert.match(index, /Church Broadcast Metronome/);
     assert.match(appScript, /tempo-control/);
+    assert.match(fullscreenScript, /exitFullscreen/);
+    assert.match(fullscreenScript, /fullscreenchange/);
+    assert.match(qrScript, /qrcode.min.js/);
+    assert.match(tempoScript, /renderTempoControl/);
     assert.match(settings, /Settings/);
     assert.match(settingsScript, /preset-list/);
     assert.equal(manifest.name, "Church Broadcast Metronome");

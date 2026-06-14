@@ -7,7 +7,7 @@ import Database from "better-sqlite3";
 import { DEFAULT_STATE, makeEmptyPresets, normalizeState } from "./state.js";
 
 const DEFAULT_SETTINGS = Object.freeze({
-  control_style: "dial",
+  control_style: "slider",
   theme: "auto",
   fullscreen_only: false,
 });
@@ -40,7 +40,7 @@ export class StateStore {
       );
       CREATE TABLE IF NOT EXISTS settings (
         id INTEGER PRIMARY KEY CHECK (id = 1),
-        control_style TEXT NOT NULL DEFAULT 'dial',
+        control_style TEXT NOT NULL DEFAULT 'slider',
         theme TEXT NOT NULL DEFAULT 'auto',
         fullscreen_only INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL

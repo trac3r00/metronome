@@ -72,8 +72,17 @@ export function applyLocalMessage(state, message) {
             bpm: preset.bpm,
             beats_per_bar: preset.beats_per_bar,
             beat_unit: preset.beat_unit,
-          }
+        }
         : state;
+    }
+    case "apply_preset": {
+      const [beatsPerBar, beatUnit] = String(message.meter).split("/").map((part) => Number(part));
+      return {
+        ...state,
+        bpm: parseBpmInput(message.bpm).bpm,
+        beats_per_bar: beatsPerBar,
+        beat_unit: beatUnit,
+      };
     }
     default:
       return state;

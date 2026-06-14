@@ -13,45 +13,66 @@
     <link rel="stylesheet" href="/styles.css">
     <script type="module" src="/app.js"></script>
   </head>
-  <body>
+  <body class="stage-page">
     <main class="app-shell app-shell--stage">
       <section class="stage" aria-label="Live metronome stage">
-        <div class="topbar">
+        <header class="topbar">
           <div id="connection" class="connection" aria-live="polite">
             <span class="connection-dot" aria-hidden="true"></span>
             <span data-status-text>Connecting</span>
           </div>
           <div class="topbar-actions">
-            <a class="icon-button" href="/settings" aria-label="Open settings">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path>
-                <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 0 1-4 0v-.08a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 0 1 0-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88l-.06-.06A2 2 0 0 1 7.03 4.2l.06.06a1.7 1.7 0 0 0 1.88.34H9A1.7 1.7 0 0 0 10 3.08V3a2 2 0 1 1 4 0v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06A2 2 0 0 1 19.8 7l-.06.06a1.7 1.7 0 0 0-.34 1.88v.03A1.7 1.7 0 0 0 20.92 10H21a2 2 0 0 1 0 4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path>
-              </svg>
-            </a>
-            <button id="fullscreen" class="icon-button" type="button" aria-label="Enter fullscreen">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
-                <path d="M16 3h3a2 2 0 0 1 2 2v3"></path>
-                <path d="M8 21H5a2 2 0 0 1-2-2v-3"></path>
-                <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
-              </svg>
-            </button>
+            <button id="share" class="icon-button" type="button" aria-label="Quick share">⤴</button>
+            <a class="icon-button" href="/settings" aria-label="Open settings">⚙</a>
+            <button id="fullscreen" class="icon-button fullscreen-button" type="button" aria-label="Enter fullscreen">⛶</button>
           </div>
+        </header>
+
+        <div class="stage-grid">
+          <section class="tempo-panel" aria-label="Tempo">
+            <div id="beat-indicator" class="beat-indicator" aria-label="Current beat"></div>
+            <div class="bpm-row">
+              <button id="bpm-minus" class="step-button" type="button" aria-label="Decrease BPM" data-stage-control>−</button>
+              <div class="tempo-readout" aria-live="polite">
+                <span id="bpm-display">120</span>
+                <span>BPM</span>
+              </div>
+              <button id="bpm-plus" class="step-button" type="button" aria-label="Increase BPM" data-stage-control>+</button>
+            </div>
+            <div id="tempo-control" class="tempo-control" aria-label="Tempo controller"></div>
+          </section>
+
+          <section class="live-controls" aria-label="Live controls">
+            <div class="meter-tap-row">
+              <div id="meter-group" class="meter-group" role="group" aria-label="Meter"></div>
+              <button id="tap-tempo" class="tap-button" type="button" data-stage-control>TAP</button>
+            </div>
+            <div class="preset-strip" aria-label="Presets">
+              <div id="preset-track" class="preset-track"></div>
+              <button id="edit-presets" class="preset-edit" type="button" data-stage-control>+ Edit</button>
+            </div>
+            <p id="message" class="message" role="status" aria-live="polite"></p>
+            <button id="play" class="play-button" type="button" aria-label="Start metronome" data-stage-control>START</button>
+          </section>
         </div>
 
-        <div class="hero">
-          <div class="tempo-readout" aria-live="polite">
-            <span id="bpm-display">120</span>
-            <span>BPM</span>
-          </div>
-          <div id="beat-indicator" class="beat-indicator" aria-label="Current beat"></div>
-          <span id="meter-display" class="meter-pill">4/4</span>
-        </div>
-
-        <div id="tempo-control" class="tempo-control" aria-label="Tempo controller"></div>
-        <div id="message" class="message" role="status" aria-live="polite"></div>
-        <button id="play" class="play-button" type="button" aria-label="Start metronome">Start</button>
+        <footer class="shortcut-help">
+          Space=Start/Stop · ↑↓=BPM ±1 · Shift+↑↓=±5 · T=Tap · 1/2/3=meter switch
+        </footer>
       </section>
     </main>
+
+    <dialog id="share-modal" class="share-modal" aria-labelledby="share-title">
+      <article class="share-card">
+        <header>
+          <h2 id="share-title">Quick Share</h2>
+          <button id="share-close" class="icon-button" type="button" aria-label="Close">✕</button>
+        </header>
+        <div id="share-qr" class="share-qr" aria-label="QR code"></div>
+        <p class="share-hint">같은 와이파이에서 스캔하면 연결됩니다</p>
+        <code id="share-url" class="share-url"></code>
+        <button id="share-copy" class="small-button" type="button">Copy</button>
+      </article>
+    </dialog>
   </body>
 </html>
