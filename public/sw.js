@@ -1,5 +1,14 @@
 const CACHE_NAME = "church-metronome-v1";
-const ASSETS = ["/", "/app.js", "/audio.js", "/styles.css", "/manifest.webmanifest", "/icon.svg"];
+const ASSETS = [
+  "/",
+  "/app.js",
+  "/audio.js",
+  "/client-utils.js",
+  "/preset-view.js",
+  "/styles.css",
+  "/manifest.webmanifest",
+  "/icon.svg",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));

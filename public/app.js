@@ -1,59 +1,70 @@
 import { AudioScheduler } from "./audio.js";
+import {
+  applyLocalMessage,
+  getReconnectDelayMs,
+  nextTapTempo,
+  parseBpmInput,
+} from "./client-utils.js";
+import { renderPresetShell, renderPresets } from "./preset-view.js";
 
 const elements = {
   connection: document.querySelector("#connection"),
+  statusText: document.querySelector("[data-status-text]"),
   fullscreen: document.querySelector("#fullscreen"),
   flash: document.querySelector("#flash"),
+  beatLabel: document.querySelector("[data-beat-label]"),
   bpmDisplay: document.querySelector("#bpm-display"),
   bpmRange: document.querySelector("#bpm-range"),
   bpmNumber: document.querySelector("#bpm-number"),
   play: document.querySelector("#play"),
   tap: document.querySelector("#tap"),
+  message: document.querySelector("#message"),
   meterDisplay: document.querySelector("#meter-display"),
   presetGrid: document.querySelector("#preset-grid"),
   meters: [...document.querySelectorAll(".meter-button")],
 };
 
-let socket = null;
-let state = null;
-let tapTimes = [];
 const scheduler = new AudioScheduler((beat, delay) => flashBeat(beat, delay));
+let socket = null;
+let state = createInitialState();
+let tapTimes = [];
+let reconnectAttempt = 0;
+let reconnectTimer = null;
+let offline = !navigator.onLine;
 
-connect();
-renderPresetShell();
+renderPresetShell(elements.presetGrid, handlePresetAction);
 bindControls();
+bindNetworkEvents();
 registerServiceWorker();
+applyState(state);
+connect();
 
 function connect() {
+  clearTimeout(reconnectTimer);
+  if (offline) {
+    setConnection("offline", "Offline");
+    setControlsDisabled(false);
+    return;
+  }
+
+  setConnection("connecting", reconnectAttempt ? "Reconnecting" : "Connecting");
+  setControlsDisabled(true);
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   socket = new WebSocket(`${protocol}://${location.host}/ws`);
-  socket.addEventListener("open", () => setConnection("Live"));
-  socket.addEventListener("close", () => {
-    setConnection("Reconnecting");
-    scheduler.stop();
-    setTimeout(connect, 900);
-  });
-  socket.addEventListener("message", (event) => {
-    const message = JSON.parse(event.data);
-    if (message.type === "state") {
-      applyState(message.state);
-    }
-    if (message.type === "error") {
-      setConnection(message.message);
-    }
-  });
+  socket.addEventListener("open", handleSocketOpen);
+  socket.addEventListener("close", handleSocketClose);
+  socket.addEventListener("error", () => showMessage("Connection error. Retrying shortly.", true));
+  socket.addEventListener("message", handleSocketMessage);
 }
 
 function bindControls() {
   elements.bpmRange.addEventListener("input", () => updateBpm(elements.bpmRange.value));
   elements.bpmNumber.addEventListener("change", () => updateBpm(elements.bpmNumber.value));
-  elements.play.addEventListener("click", () => {
-    if (state) {
-      send({ type: "set_playing", playing: !state.playing });
-    }
-  });
+  elements.play.addEventListener("click", togglePlayback);
   elements.tap.addEventListener("click", tapTempo);
   elements.fullscreen.addEventListener("click", () => document.documentElement.requestFullscreen?.());
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+
   for (const button of elements.meters) {
     button.addEventListener("click", () => {
       const [beatsPerBar, beatUnit] = button.dataset.meter.split("/").map(Number);
@@ -62,103 +73,190 @@ function bindControls() {
   }
 }
 
+function bindNetworkEvents() {
+  window.addEventListener("online", () => {
+    offline = false;
+    reconnectAttempt = 0;
+    showMessage("Back online. Reconnecting to room state.", false);
+    connect();
+  });
+  window.addEventListener("offline", () => {
+    offline = true;
+    socket?.close();
+    setConnection("offline", "Offline");
+    setControlsDisabled(false);
+    showMessage("Offline mode. Changes stay on this device until reconnect.", false);
+  });
+}
+
+function createInitialState() {
+  return {
+    bpm: 120,
+    beats_per_bar: 4,
+    beat_unit: 4,
+    playing: false,
+    presets: Array.from({ length: 10 }, () => null),
+  };
+}
+
+function handleSocketOpen() {
+  reconnectAttempt = 0;
+  setConnection("live", "Live");
+  setControlsDisabled(false);
+  showMessage("", false);
+}
+
+function handleSocketClose() {
+  scheduler.stop();
+  if (offline) {
+    return;
+  }
+  setControlsDisabled(true);
+  const delay = getReconnectDelayMs(reconnectAttempt);
+  reconnectAttempt += 1;
+  setConnection("reconnecting", `Reconnecting in ${Math.round(delay / 1000)}s`);
+  reconnectTimer = setTimeout(connect, delay);
+}
+
+function handleSocketMessage(event) {
+  try {
+    const message = JSON.parse(event.data);
+    if (message.type === "state" && message.state) {
+      applyState(message.state);
+      return;
+    }
+    if (message.type === "error") {
+      showMessage(message.message || "Server rejected the last change.", true);
+    }
+  } catch {
+    showMessage("Received an unreadable server message.", true);
+  }
+}
+
+async function togglePlayback() {
+  if (!state) {
+    return;
+  }
+  if (!state.playing) {
+    try {
+      await scheduler.resume();
+    } catch {
+      showMessage("Audio could not start. Tap Start again after allowing sound.", true);
+      return;
+    }
+  }
+  send({ type: "set_playing", playing: !state.playing });
+}
+
 function applyState(nextState) {
   state = nextState;
+  const meter = `${state.beats_per_bar}/${state.beat_unit}`;
   elements.bpmDisplay.textContent = String(state.bpm);
   elements.bpmRange.value = String(state.bpm);
   elements.bpmNumber.value = String(state.bpm);
+  elements.bpmNumber.classList.remove("invalid");
   elements.play.textContent = state.playing ? "Stop" : "Start";
   elements.play.classList.toggle("stopping", state.playing);
-  elements.meterDisplay.textContent = `${state.beats_per_bar}/${state.beat_unit}`;
+  elements.play.setAttribute("aria-label", state.playing ? "Stop metronome" : "Start metronome");
+  elements.meterDisplay.textContent = meter;
   for (const button of elements.meters) {
-    button.classList.toggle("active", button.dataset.meter === elements.meterDisplay.textContent);
+    button.classList.toggle("active", button.dataset.meter === meter);
   }
-  renderPresets();
+  renderPresets(elements.presetGrid, state);
   scheduler.update(state);
-  if (state.playing) {
-    scheduler.start(state);
+  if (state.playing && document.visibilityState !== "hidden") {
+    scheduler.start(state).catch(() => showMessage("Audio playback is suspended.", true));
   } else {
     scheduler.stop();
   }
 }
 
 function updateBpm(value) {
-  const bpm = Number(value);
-  if (Number.isInteger(bpm) && bpm >= 30 && bpm <= 300) {
-    send({ type: "set_bpm", bpm });
+  const parsed = parseBpmInput(value);
+  elements.bpmNumber.classList.toggle("invalid", !parsed.valid);
+  elements.bpmRange.value = String(parsed.bpm);
+  elements.bpmNumber.value = String(parsed.bpm);
+  send({ type: "set_bpm", bpm: parsed.bpm });
+  if (!parsed.valid) {
+    showMessage("BPM was adjusted to the supported 30-300 range.", true);
   }
 }
 
 function tapTempo() {
-  const now = performance.now();
-  tapTimes = tapTimes.filter((time) => now - time < 2500);
-  tapTimes.push(now);
-  if (tapTimes.length < 2) {
+  const result = nextTapTempo(tapTimes, performance.now());
+  tapTimes = result.taps;
+  if (result.ignored) {
+    showMessage("Tap ignored. Keep taps between 200ms and 3s apart.", true);
     return;
   }
-  const gaps = tapTimes.slice(1).map((time, index) => time - tapTimes[index]);
-  const average = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
-  const bpm = Math.min(300, Math.max(30, Math.round(60000 / average)));
-  send({ type: "set_bpm", bpm });
-}
-
-function renderPresetShell() {
-  for (let slot = 1; slot <= 10; slot += 1) {
-    const card = document.createElement("article");
-    card.className = "preset-slot";
-    card.innerHTML = `
-      <div class="preset-label"><strong>${slot}</strong><span data-preset-value="${slot}">Empty</span></div>
-      <div class="preset-actions">
-        <button type="button" data-load="${slot}">Load</button>
-        <button type="button" data-save="${slot}">Save</button>
-      </div>
-    `;
-    elements.presetGrid.append(card);
+  if (result.bpm) {
+    send({ type: "set_bpm", bpm: result.bpm });
   }
-  elements.presetGrid.addEventListener("click", (event) => {
-    const button = event.target.closest("button");
-    if (!button) {
-      return;
-    }
-    if (button.dataset.load) {
-      send({ type: "load_preset", slot: Number(button.dataset.load) });
-    }
-    if (button.dataset.save) {
-      send({ type: "overwrite_preset", slot: Number(button.dataset.save) });
-    }
-  });
 }
 
-function renderPresets() {
-  state.presets.forEach((preset, index) => {
-    const slot = index + 1;
-    const label = document.querySelector(`[data-preset-value="${slot}"]`);
-    const load = document.querySelector(`[data-load="${slot}"]`);
-    label.textContent = preset ? `${preset.bpm} BPM ${preset.beats_per_bar}/${preset.beat_unit}` : "Empty";
-    load.disabled = !preset;
-  });
+function handlePresetAction(message) {
+  const isSave = message.type === "overwrite_preset";
+  send(message, isSave ? "Preset could not be saved." : "Preset could not be loaded.");
+  if (isSave) {
+    showMessage("Preset saved.", false);
+  }
 }
 
 function flashBeat(beat, delay) {
   setTimeout(() => {
     elements.flash.classList.add("active");
     elements.flash.dataset.beat = String(beat + 1);
-    setTimeout(() => elements.flash.classList.remove("active"), 90);
+    elements.beatLabel.textContent = String(beat + 1);
+    setTimeout(() => elements.flash.classList.remove("active"), 110);
   }, delay * 1000);
 }
 
-function send(message) {
+function send(message, failureMessage = "Change could not be sent.") {
+  if (offline && state) {
+    applyState(applyLocalMessage(state, message));
+    return true;
+  }
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(message));
+    return true;
+  }
+  showMessage(failureMessage, true);
+  return false;
+}
+
+function setConnection(mode, text) {
+  elements.connection.dataset.status = mode;
+  elements.statusText.textContent = text;
+}
+
+function setControlsDisabled(disabled) {
+  for (const input of [elements.bpmRange, elements.bpmNumber, elements.play, elements.tap, ...elements.meters]) {
+    input.disabled = disabled;
+  }
+  for (const button of elements.presetGrid.querySelectorAll("button")) {
+    button.disabled = disabled || (button.dataset.load && button.dataset.empty === "true");
   }
 }
 
-function setConnection(text) {
-  elements.connection.textContent = text;
+function showMessage(text, isError) {
+  elements.message.textContent = text;
+  elements.message.classList.toggle("error", isError);
+}
+
+async function handleVisibilityChange() {
+  if (document.visibilityState === "hidden") {
+    await scheduler.suspend();
+    return;
+  }
+  if (state?.playing) {
+    scheduler.start(state).catch(() => showMessage("Audio playback is suspended.", true));
+  }
 }
 
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js");
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      showMessage("Offline cache is unavailable in this browser.", true);
+    });
   }
 }

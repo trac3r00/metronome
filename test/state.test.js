@@ -29,6 +29,31 @@ describe("state validation", () => {
     );
   });
 
+  it("accepts bpm boundary values", () => {
+    // Given: the default room state.
+    const state = DEFAULT_STATE;
+
+    // When: clients send the minimum and maximum supported BPM values.
+    const minimum = reduceMessage(state, { type: "set_bpm", bpm: 30 });
+    const maximum = reduceMessage(state, { type: "set_bpm", bpm: 300 });
+
+    // Then: both boundaries are accepted.
+    assert.equal(minimum.bpm, 30);
+    assert.equal(maximum.bpm, 300);
+  });
+
+  it("rejects non-integer bpm values", () => {
+    // Given: the default room state.
+    const state = DEFAULT_STATE;
+
+    // When: a client sends a non-integer BPM.
+    // Then: validation rejects it.
+    assert.throws(
+      () => reduceMessage(state, { type: "set_bpm", bpm: 120.5 }),
+      /BPM must be between 30 and 300/,
+    );
+  });
+
   it("accepts only the supported church meter options", () => {
     // Given: the default room state.
     const state = DEFAULT_STATE;
@@ -83,5 +108,29 @@ describe("state validation", () => {
     assert.equal(loaded.bpm, 92);
     assert.equal(loaded.beats_per_bar, 3);
     assert.equal(loaded.beat_unit, 4);
+  });
+
+  it("rejects loading an empty preset slot", () => {
+    // Given: the default state with no saved presets.
+    const state = DEFAULT_STATE;
+
+    // When: a client loads an empty preset.
+    // Then: validation rejects the request.
+    assert.throws(
+      () => reduceMessage(state, { type: "load_preset", slot: 2 }),
+      /Preset slot 2 is empty/,
+    );
+  });
+
+  it("rejects non-boolean playing updates", () => {
+    // Given: the default room state.
+    const state = DEFAULT_STATE;
+
+    // When: a client sends a string playing value.
+    // Then: validation rejects it.
+    assert.throws(
+      () => reduceMessage(state, { type: "set_playing", playing: "true" }),
+      /Playing must be true or false/,
+    );
   });
 });

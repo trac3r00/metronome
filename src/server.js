@@ -11,25 +11,38 @@ import { StateStore } from "./store.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
 const DEFAULT_DB_PATH = process.env.METRONOME_DB_PATH ?? path.join(process.cwd(), "data", "metronome.sqlite");
+const WS_MAX_PAYLOAD_BYTES = 4096;
+const RATE_LIMIT_WINDOW_MS = 100;
+const RATE_LIMIT_MAX_MESSAGES = 10;
+const RATE_LIMIT_BLOCK_MS = 2000;
 
 export function createAppServer({ dbPath = DEFAULT_DB_PATH } = {}) {
   const app = express();
   const store = new StateStore(dbPath);
   let state = store.load();
   const server = http.createServer(app);
-  const wss = new WebSocketServer({ server, path: "/ws" });
+  const wss = new WebSocketServer({ server, path: "/ws", maxPayload: WS_MAX_PAYLOAD_BYTES });
   let closePromise;
 
   app.get("/healthz", (_request, response) => {
-    response.json({ ok: true });
+    try {
+      response.json({ ok: true, store: store.health() });
+    } catch (error) {
+      response.status(503).json({ ok: false, store: { ok: false }, error: "Store unavailable" });
+    }
   });
 
   app.use(express.static(PUBLIC_DIR, { extensions: ["html"] }));
 
   wss.on("connection", (socket) => {
+    const limiter = createRateLimiter();
     sendState(socket, state);
     socket.on("message", (data) => {
       try {
+        if (isRateLimited(limiter)) {
+          socket.send(JSON.stringify({ type: "error", message: "Rate limit exceeded. Try again shortly." }));
+          return;
+        }
         const message = JSON.parse(data.toString());
         state = store.save(reduceMessage(state, message));
         broadcastState(wss, state);
@@ -37,6 +50,7 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH } = {}) {
         socket.send(JSON.stringify(formatError(error)));
       }
     });
+    socket.on("error", () => {});
   });
 
   return {
@@ -111,6 +125,30 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH } = {}) {
   };
 }
 
+function createRateLimiter() {
+  return {
+    windowStartedAt: 0,
+    messageCount: 0,
+    blockedUntil: 0,
+  };
+}
+
+function isRateLimited(limiter, now = Date.now()) {
+  if (now < limiter.blockedUntil) {
+    return true;
+  }
+  if (now - limiter.windowStartedAt > RATE_LIMIT_WINDOW_MS) {
+    limiter.windowStartedAt = now;
+    limiter.messageCount = 0;
+  }
+  limiter.messageCount += 1;
+  if (limiter.messageCount <= RATE_LIMIT_MAX_MESSAGES) {
+    return false;
+  }
+  limiter.blockedUntil = now + RATE_LIMIT_BLOCK_MS;
+  return true;
+}
+
 function broadcastState(wss, state) {
   for (const client of wss.clients) {
     sendState(client, state);
@@ -134,4 +172,15 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const appServer = createAppServer();
   await appServer.listen();
   console.log(`Metronome listening at ${appServer.baseUrl}`);
+  const shutdown = async () => {
+    try {
+      await appServer.close();
+      process.exit(0);
+    } catch (error) {
+      console.error(error);
+      process.exit(1);
+    }
+  };
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
 }
