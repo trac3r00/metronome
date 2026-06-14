@@ -5,38 +5,41 @@ import {
   nextTapTempo,
   parseBpmInput,
 } from "./client-utils.js";
-import { renderPresetShell, renderPresets } from "./preset-view.js";
 
 const elements = {
   connection: document.querySelector("#connection"),
   statusText: document.querySelector("[data-status-text]"),
   fullscreen: document.querySelector("#fullscreen"),
-  flash: document.querySelector("#flash"),
-  beatLabel: document.querySelector("[data-beat-label]"),
+  beatIndicator: document.querySelector("#beat-indicator"),
   bpmDisplay: document.querySelector("#bpm-display"),
-  bpmRange: document.querySelector("#bpm-range"),
-  bpmNumber: document.querySelector("#bpm-number"),
   play: document.querySelector("#play"),
-  tap: document.querySelector("#tap"),
   message: document.querySelector("#message"),
   meterDisplay: document.querySelector("#meter-display"),
-  presetGrid: document.querySelector("#preset-grid"),
-  meters: [...document.querySelectorAll(".meter-button")],
+  tempoControl: document.querySelector("#tempo-control"),
 };
 
 const scheduler = new AudioScheduler((beat, delay) => flashBeat(beat, delay));
 let socket = null;
 let state = createInitialState();
+let settings = {
+  control_style: "dial",
+  theme: "auto",
+  fullscreen_only: false,
+  updated_at: null,
+  presets: [],
+};
 let tapTimes = [];
 let reconnectAttempt = 0;
 let reconnectTimer = null;
 let offline = !navigator.onLine;
+let renderedControlStyle = null;
 
-renderPresetShell(elements.presetGrid, handlePresetAction);
 bindControls();
 bindNetworkEvents();
 registerServiceWorker();
+applyTheme();
 applyState(state);
+loadSettings();
 connect();
 
 function connect() {
@@ -58,19 +61,9 @@ function connect() {
 }
 
 function bindControls() {
-  elements.bpmRange.addEventListener("input", () => updateBpm(elements.bpmRange.value));
-  elements.bpmNumber.addEventListener("change", () => updateBpm(elements.bpmNumber.value));
   elements.play.addEventListener("click", togglePlayback);
-  elements.tap.addEventListener("click", tapTempo);
   elements.fullscreen.addEventListener("click", () => document.documentElement.requestFullscreen?.());
   document.addEventListener("visibilitychange", handleVisibilityChange);
-
-  for (const button of elements.meters) {
-    button.addEventListener("click", () => {
-      const [beatsPerBar, beatUnit] = button.dataset.meter.split("/").map(Number);
-      send({ type: "set_meter", beats_per_bar: beatsPerBar, beat_unit: beatUnit });
-    });
-  }
 }
 
 function bindNetworkEvents() {
@@ -78,6 +71,7 @@ function bindNetworkEvents() {
     offline = false;
     reconnectAttempt = 0;
     showMessage("Back online. Reconnecting to room state.", false);
+    loadSettings();
     connect();
   });
   window.addEventListener("offline", () => {
@@ -97,6 +91,19 @@ function createInitialState() {
     playing: false,
     presets: Array.from({ length: 10 }, () => null),
   };
+}
+
+async function loadSettings() {
+  try {
+    const response = await fetch("/api/settings", { headers: { accept: "application/json" } });
+    if (!response.ok) {
+      throw new Error(`Settings request failed: ${response.status}`);
+    }
+    applySettings(await response.json());
+  } catch {
+    showMessage("Settings could not be loaded. Using local controls.", true);
+    renderTempoControl();
+  }
 }
 
 function handleSocketOpen() {
@@ -125,6 +132,14 @@ function handleSocketMessage(event) {
       applyState(message.state);
       return;
     }
+    if (message.type === "settings:update" && message.settings) {
+      applySettings(message.settings);
+      return;
+    }
+    if (message.type === "presets:update") {
+      settings = { ...settings, presets: message.presets ?? [] };
+      return;
+    }
     if (message.type === "error") {
       showMessage(message.message || "Server rejected the last change.", true);
     }
@@ -148,21 +163,28 @@ async function togglePlayback() {
   send({ type: "set_playing", playing: !state.playing });
 }
 
+function applySettings(nextSettings) {
+  settings = { ...settings, ...nextSettings };
+  applyTheme();
+  renderTempoControl();
+}
+
+function applyTheme() {
+  const theme = settings.theme ?? "auto";
+  document.documentElement.dataset.theme = theme;
+  document.body.classList.toggle("fullscreen-only", Boolean(settings.fullscreen_only));
+}
+
 function applyState(nextState) {
   state = nextState;
   const meter = `${state.beats_per_bar}/${state.beat_unit}`;
   elements.bpmDisplay.textContent = String(state.bpm);
-  elements.bpmRange.value = String(state.bpm);
-  elements.bpmNumber.value = String(state.bpm);
-  elements.bpmNumber.classList.remove("invalid");
   elements.play.textContent = state.playing ? "Stop" : "Start";
   elements.play.classList.toggle("stopping", state.playing);
   elements.play.setAttribute("aria-label", state.playing ? "Stop metronome" : "Start metronome");
   elements.meterDisplay.textContent = meter;
-  for (const button of elements.meters) {
-    button.classList.toggle("active", button.dataset.meter === meter);
-  }
-  renderPresets(elements.presetGrid, state);
+  renderBeatIndicator();
+  syncTempoControlValue();
   scheduler.update(state);
   if (state.playing && document.visibilityState !== "hidden") {
     scheduler.start(state).catch(() => showMessage("Audio playback is suspended.", true));
@@ -171,11 +193,171 @@ function applyState(nextState) {
   }
 }
 
+function renderBeatIndicator(activeBeat = 0) {
+  elements.beatIndicator.replaceChildren();
+  for (let index = 0; index < state.beats_per_bar; index += 1) {
+    const dot = document.createElement("span");
+    dot.className = "beat-dot";
+    dot.textContent = String(index + 1);
+    dot.classList.toggle("active", index === activeBeat && state.playing);
+    elements.beatIndicator.append(dot);
+  }
+}
+
+function renderTempoControl() {
+  const style = settings.control_style ?? "dial";
+  if (renderedControlStyle === style && elements.tempoControl.childElementCount > 0) {
+    syncTempoControlValue();
+    return;
+  }
+
+  renderedControlStyle = style;
+  tapTimes = [];
+  elements.tempoControl.replaceChildren();
+  if (style === "slider") {
+    renderSliderControl();
+    return;
+  }
+  if (style === "wheel") {
+    renderWheelControl();
+    return;
+  }
+  if (style === "tap") {
+    renderTapControl();
+    return;
+  }
+  renderDialControl();
+}
+
+function renderDialControl() {
+  const wrapper = document.createElement("div");
+  wrapper.className = "dial-control";
+  wrapper.tabIndex = 0;
+  wrapper.setAttribute("role", "slider");
+  wrapper.setAttribute("aria-label", "Dial tempo control");
+  wrapper.setAttribute("aria-valuemin", "30");
+  wrapper.setAttribute("aria-valuemax", "300");
+  wrapper.innerHTML = `
+    <svg viewBox="0 0 160 160" aria-hidden="true">
+      <circle class="dial-track" cx="80" cy="80" r="66"></circle>
+      <circle class="dial-progress" cx="80" cy="80" r="66"></circle>
+      <line class="dial-needle" x1="80" y1="80" x2="80" y2="31"></line>
+      <circle class="dial-hub" cx="80" cy="80" r="14"></circle>
+    </svg>
+    <span>Dial</span>
+  `;
+  const drag = (event) => {
+    const rect = wrapper.getBoundingClientRect();
+    const x = event.clientX - rect.left - rect.width / 2;
+    const y = event.clientY - rect.top - rect.height / 2;
+    const angle = (Math.atan2(y, x) * 180) / Math.PI + 90;
+    const normalized = (angle + 360) % 360;
+    updateBpm(30 + Math.round((normalized / 360) * 270));
+  };
+  wrapper.addEventListener("pointerdown", (event) => {
+    wrapper.setPointerCapture(event.pointerId);
+    wrapper.classList.add("pressed");
+    drag(event);
+  });
+  wrapper.addEventListener("pointermove", (event) => {
+    if (wrapper.hasPointerCapture(event.pointerId)) {
+      drag(event);
+    }
+  });
+  wrapper.addEventListener("pointerup", (event) => {
+    wrapper.releasePointerCapture(event.pointerId);
+    wrapper.classList.remove("pressed");
+  });
+  wrapper.addEventListener("keydown", (event) => {
+    if (!["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    const direction = ["ArrowUp", "ArrowRight"].includes(event.key) ? 1 : -1;
+    updateBpm(state.bpm + direction * (event.shiftKey ? 10 : 1));
+  });
+  elements.tempoControl.append(wrapper);
+  syncTempoControlValue();
+}
+
+function renderSliderControl() {
+  const label = document.createElement("label");
+  label.className = "slider-control";
+  label.innerHTML = `
+    <span>Tempo</span>
+    <input type="range" min="30" max="300" value="${state.bpm}" aria-label="BPM slider">
+  `;
+  label.querySelector("input").addEventListener("input", (event) => updateBpm(event.target.value));
+  elements.tempoControl.append(label);
+}
+
+function renderWheelControl() {
+  const control = document.createElement("div");
+  control.className = "wheel-control";
+  control.tabIndex = 0;
+  control.setAttribute("role", "spinbutton");
+  control.setAttribute("aria-label", "Wheel tempo control");
+  control.innerHTML = "<span>Swipe or scroll</span><strong data-wheel-value></strong>";
+  let touchStart = null;
+  control.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    updateBpm(state.bpm + (event.deltaY < 0 ? 1 : -1));
+  }, { passive: false });
+  control.addEventListener("touchstart", (event) => {
+    touchStart = event.touches[0]?.clientY ?? null;
+  }, { passive: true });
+  control.addEventListener("touchmove", (event) => {
+    if (touchStart === null) {
+      return;
+    }
+    const next = event.touches[0]?.clientY ?? touchStart;
+    const delta = touchStart - next;
+    if (Math.abs(delta) >= 12) {
+      updateBpm(state.bpm + Math.sign(delta));
+      touchStart = next;
+    }
+  }, { passive: true });
+  control.addEventListener("keydown", (event) => {
+    if (!["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    const direction = ["ArrowUp", "ArrowRight"].includes(event.key) ? 1 : -1;
+    updateBpm(state.bpm + direction * (event.shiftKey ? 10 : 1));
+  });
+  elements.tempoControl.append(control);
+  syncTempoControlValue();
+}
+
+function renderTapControl() {
+  const button = document.createElement("button");
+  button.className = "tap-control";
+  button.type = "button";
+  button.textContent = "TAP";
+  button.addEventListener("click", tapTempo);
+  elements.tempoControl.append(button);
+}
+
+function syncTempoControlValue() {
+  const dial = elements.tempoControl.querySelector(".dial-control");
+  if (dial) {
+    const angle = ((state.bpm - 30) / 270) * 360;
+    dial.style.setProperty("--dial-angle", `${angle}deg`);
+    dial.style.setProperty("--dial-progress", String(415 - 415 * ((state.bpm - 30) / 270)));
+    dial.setAttribute("aria-valuenow", String(state.bpm));
+  }
+  const slider = elements.tempoControl.querySelector("input[type='range']");
+  if (slider) {
+    slider.value = String(state.bpm);
+  }
+  const wheelValue = elements.tempoControl.querySelector("[data-wheel-value]");
+  if (wheelValue) {
+    wheelValue.textContent = `${state.bpm} BPM`;
+  }
+}
+
 function updateBpm(value) {
   const parsed = parseBpmInput(value);
-  elements.bpmNumber.classList.toggle("invalid", !parsed.valid);
-  elements.bpmRange.value = String(parsed.bpm);
-  elements.bpmNumber.value = String(parsed.bpm);
   send({ type: "set_bpm", bpm: parsed.bpm });
   if (!parsed.valid) {
     showMessage("BPM was adjusted to the supported 30-300 range.", true);
@@ -186,28 +368,19 @@ function tapTempo() {
   const result = nextTapTempo(tapTimes, performance.now());
   tapTimes = result.taps;
   if (result.ignored) {
-    showMessage("Tap ignored. Keep taps between 200ms and 3s apart.", true);
+    showMessage("Tap ignored. Keep taps at least 200ms apart.", true);
     return;
   }
   if (result.bpm) {
-    send({ type: "set_bpm", bpm: result.bpm });
-  }
-}
-
-function handlePresetAction(message) {
-  const isSave = message.type === "overwrite_preset";
-  send(message, isSave ? "Preset could not be saved." : "Preset could not be loaded.");
-  if (isSave) {
-    showMessage("Preset saved.", false);
+    updateBpm(result.bpm);
   }
 }
 
 function flashBeat(beat, delay) {
   setTimeout(() => {
-    elements.flash.classList.add("active");
-    elements.flash.dataset.beat = String(beat + 1);
-    elements.beatLabel.textContent = String(beat + 1);
-    setTimeout(() => elements.flash.classList.remove("active"), 110);
+    renderBeatIndicator(beat);
+    elements.beatIndicator.classList.add("pulse");
+    setTimeout(() => elements.beatIndicator.classList.remove("pulse"), 180);
   }, delay * 1000);
 }
 
@@ -230,11 +403,9 @@ function setConnection(mode, text) {
 }
 
 function setControlsDisabled(disabled) {
-  for (const input of [elements.bpmRange, elements.bpmNumber, elements.play, elements.tap, ...elements.meters]) {
-    input.disabled = disabled;
-  }
-  for (const button of elements.presetGrid.querySelectorAll("button")) {
-    button.disabled = disabled || (button.dataset.load && button.dataset.empty === "true");
+  elements.play.disabled = disabled;
+  for (const control of elements.tempoControl.querySelectorAll("button, input")) {
+    control.disabled = disabled;
   }
 }
 

@@ -1,10 +1,12 @@
-const CACHE_NAME = "church-metronome-v1";
+const CACHE_NAME = "church-metronome-v2";
 const ASSETS = [
   "/",
   "/app.js",
+  "/settings",
+  "/settings.html",
+  "/settings.js",
   "/audio.js",
   "/client-utils.js",
-  "/preset-view.js",
   "/styles.css",
   "/manifest.webmanifest",
   "/icon.svg",

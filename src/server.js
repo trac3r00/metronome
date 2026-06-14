@@ -6,7 +6,7 @@ import express from "express";
 import WebSocket, { WebSocketServer } from "ws";
 
 import { reduceMessage, ValidationError } from "./state.js";
-import { StateStore } from "./store.js";
+import { StateStore, StoreValidationError } from "./store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
@@ -24,11 +24,79 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH } = {}) {
   const wss = new WebSocketServer({ server, path: "/ws", maxPayload: WS_MAX_PAYLOAD_BYTES });
   let closePromise;
 
+  app.use(express.json({ limit: "16kb" }));
+
   app.get("/healthz", (_request, response) => {
     try {
       response.json({ ok: true, store: store.health() });
     } catch (error) {
       response.status(503).json({ ok: false, store: { ok: false }, error: "Store unavailable" });
+    }
+  });
+
+  app.get("/api/settings", (_request, response) => {
+    response.json(store.getSettings());
+  });
+
+  app.get("/api/state", (_request, response) => {
+    response.json(state);
+  });
+
+  app.put("/api/settings", (request, response) => {
+    try {
+      const settings = store.updateSettings(request.body ?? {});
+      response.json(settings);
+      broadcastJson(wss, { type: "settings:update", settings });
+    } catch (error) {
+      sendHttpError(response, error);
+    }
+  });
+
+  app.get("/api/presets", (_request, response) => {
+    response.json(store.listPresets());
+  });
+
+  app.post("/api/presets", (request, response) => {
+    try {
+      const preset = store.createPreset(request.body ?? {});
+      response.status(201).json(preset);
+      broadcastJson(wss, { type: "presets:update", presets: store.listPresets() });
+    } catch (error) {
+      sendHttpError(response, error);
+    }
+  });
+
+  app.patch("/api/presets/:id", (request, response) => {
+    try {
+      const preset = store.updatePreset(request.params.id, request.body ?? {});
+      if (!preset) {
+        response.status(404).json({ error: "Preset not found" });
+        return;
+      }
+      response.json(preset);
+      broadcastJson(wss, { type: "presets:update", presets: store.listPresets() });
+    } catch (error) {
+      sendHttpError(response, error);
+    }
+  });
+
+  app.delete("/api/presets/:id", (request, response) => {
+    const deleted = store.deletePreset(request.params.id);
+    if (!deleted) {
+      response.status(404).json({ error: "Preset not found" });
+      return;
+    }
+    response.status(204).end();
+    broadcastJson(wss, { type: "presets:update", presets: store.listPresets() });
+  });
+
+  app.post("/api/presets/reorder", (request, response) => {
+    try {
+      const presets = store.reorderPresets(request.body?.ids);
+      response.json(presets);
+      broadcastJson(wss, { type: "presets:update", presets });
+    } catch (error) {
+      sendHttpError(response, error);
     }
   });
 
@@ -155,6 +223,15 @@ function broadcastState(wss, state) {
   }
 }
 
+function broadcastJson(wss, message) {
+  const serialized = JSON.stringify(message);
+  for (const client of wss.clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(serialized);
+    }
+  }
+}
+
 function sendState(socket, state) {
   if (socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type: "state", state }));
@@ -162,10 +239,18 @@ function sendState(socket, state) {
 }
 
 function formatError(error) {
-  if (error instanceof ValidationError || error instanceof SyntaxError) {
+  if (error instanceof ValidationError || error instanceof StoreValidationError || error instanceof SyntaxError) {
     return { type: "error", message: error.message };
   }
   return { type: "error", message: "Internal server error" };
+}
+
+function sendHttpError(response, error) {
+  if (error instanceof StoreValidationError || error instanceof SyntaxError) {
+    response.status(400).json({ error: error.message });
+    return;
+  }
+  response.status(500).json({ error: "Internal server error" });
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

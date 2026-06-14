@@ -59,15 +59,15 @@ describe("client guard helpers", () => {
     assert.deepEqual(result, { taps, bpm: null, ignored: true });
   });
 
-  it("resets tap tempo after a slow gap", () => {
+  it("resets tap tempo after a two-second idle gap", () => {
     // Given: a previous tap.
     const taps = [1000, 1500];
 
-    // When: the next tap arrives after more than three seconds.
-    const result = nextTapTempo(taps, 5001);
+    // When: the next tap arrives after more than two seconds.
+    const result = nextTapTempo(taps, 3501);
 
     // Then: the tap history restarts.
-    assert.deepEqual(result, { taps: [5001], bpm: null, ignored: false });
+    assert.deepEqual(result, { taps: [3501], bpm: null, ignored: false });
   });
 
   it("calculates tap tempo from valid gaps", () => {
