@@ -47,8 +47,13 @@ const elements = {
 const scheduler = new AudioScheduler((beat, delay) => flashBeat(beat, delay));
 const autoplayGate = createAutoplayGestureGate({
   target: document,
-  start: () => (state?.playing ? scheduler.start(state) : Promise.resolve()),
+  start: () => {
+    return state?.playing ? scheduler.start(state) : Promise.resolve();
+  },
   showMessage,
+  getCurrentMessage: () => elements.message.textContent,
+  isStillPlaying: () => Boolean(state?.playing),
+  stop: () => scheduler.stop(),
   onError: () => showMessage(AUDIO_UNLOCK_MESSAGE, true),
 });
 let socket = null;
