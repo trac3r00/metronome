@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#101114">
+    <title>Church Broadcast Metronome</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="stage" aria-live="polite">
+        <div class="status-line">
+          <span id="connection">Connecting</span>
+          <button id="fullscreen" class="icon-button" type="button" aria-label="Enter fullscreen">⛶</button>
+        </div>
+        <div id="flash" class="pulse-ring">
+          <div>
+            <span id="bpm-display">120</span>
+            <span>BPM</span>
+          </div>
+        </div>
+        <button id="play" class="play-button" type="button">Start</button>
+      </section>
+
+      <section class="controls" aria-label="Metronome controls">
+        <label class="bpm-control">
+          <span>BPM</span>
+          <input id="bpm-range" type="range" min="30" max="300" value="120">
+          <input id="bpm-number" type="number" min="30" max="300" value="120" inputmode="numeric">
+        </label>
+
+        <div class="meter-group" role="group" aria-label="Beat meter">
+          <button class="meter-button" type="button" data-meter="4/4">4/4</button>
+          <button class="meter-button" type="button" data-meter="3/4">3/4</button>
+          <button class="meter-button" type="button" data-meter="6/8">6/8</button>
+        </div>
+
+        <button id="tap" class="secondary-button" type="button">Tap Tempo</button>
+      </section>
+
+      <section class="presets" aria-label="Preset slots">
+        <div class="section-title">
+          <h1>Church Broadcast Metronome</h1>
+          <span id="meter-display">4/4</span>
+        </div>
+        <div id="preset-grid" class="preset-grid"></div>
+      </section>
+    </main>
+  </body>
+</html>

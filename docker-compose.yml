@@ -1,0 +1,14 @@
+services:
+  metronome:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      METRONOME_DB_PATH: /app/data/metronome.sqlite
+    volumes:
+      - metronome-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  metronome-data:
