@@ -209,6 +209,61 @@ describe("client guard helpers", () => {
     await target.dispatch("keydown");
     assert.equal(starts, 1);
   });
+
+  it("does not clear a newer message after autoplay unlock resolves", async () => {
+    const target = new FakeEventTarget();
+    const messages = [];
+    let currentMessage = "";
+    const gate = createAutoplayGestureGate({
+      target,
+      start: async () => {},
+      showMessage(message, isError) {
+        currentMessage = message;
+        messages.push({ message, isError });
+      },
+      getCurrentMessage() {
+        return currentMessage;
+      },
+    });
+
+    gate.request();
+    currentMessage = "Connection error. Retrying shortly.";
+    await target.dispatch("pointerdown");
+
+    assert.equal(messages.at(-1).message, AUDIO_UNLOCK_MESSAGE);
+  });
+
+  it("stops if playback turns off while autoplay unlock is awaiting resume", async () => {
+    const target = new FakeEventTarget();
+    let playing = true;
+    let resume;
+    const scheduler = new FakeScheduler(false);
+    scheduler.start = async () => {
+      scheduler.starts += 1;
+      scheduler.isRunning = true;
+      await new Promise((resolve) => {
+        resume = resolve;
+      });
+    };
+    const gate = createAutoplayGestureGate({
+      target,
+      start: () => scheduler.start({ bpm: 120, beats_per_bar: 4, beat_unit: 4, playing }),
+      isStillPlaying: () => playing,
+      stop: () => scheduler.stop(),
+      showMessage() {},
+      getCurrentMessage: () => AUDIO_UNLOCK_MESSAGE,
+    });
+
+    gate.request();
+    const unlock = target.dispatch("pointerdown");
+    playing = false;
+    resume();
+    await unlock;
+
+    assert.equal(scheduler.starts, 1);
+    assert.equal(scheduler.stops, 1);
+    assert.equal(scheduler.isRunning, false);
+  });
 });
 
 class FakeScheduler {

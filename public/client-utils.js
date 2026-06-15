@@ -147,7 +147,15 @@ export async function syncSchedulerToState({ state, scheduler, visibilityState, 
   }
 }
 
-export function createAutoplayGestureGate({ target, start, showMessage, onError = () => {} }) {
+export function createAutoplayGestureGate({
+  target,
+  start,
+  showMessage,
+  getCurrentMessage = () => AUDIO_UNLOCK_MESSAGE,
+  isStillPlaying = () => true,
+  stop = () => {},
+  onError = () => {},
+}) {
   let pending = false;
 
   const clear = () => {
@@ -160,6 +168,13 @@ export function createAutoplayGestureGate({ target, start, showMessage, onError 
     clear();
     try {
       await start();
+      if (!isStillPlaying()) {
+        stop();
+        return;
+      }
+      if (getCurrentMessage() === AUDIO_UNLOCK_MESSAGE) {
+        showMessage("", false);
+      }
     } catch (error) {
       onError(error);
     }
