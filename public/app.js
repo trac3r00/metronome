@@ -1,4 +1,4 @@
-import { AudioScheduler } from "./audio.js";
+import { AudioScheduler, SOUND_OPTIONS } from "./audio.js";
 import {
   AUDIO_UNLOCK_MESSAGE,
   applyLocalMessage,
@@ -17,6 +17,12 @@ const METERS = [
   { label: "3/4", beats_per_bar: 3, beat_unit: 4 },
   { label: "6/8", beats_per_bar: 6, beat_unit: 8 },
 ];
+const CONTROL_STYLES = [
+  { id: "dial", label: "Dial", preview: "circle" },
+  { id: "slider", label: "Slider", preview: "line" },
+  { id: "wheel", label: "Wheel", preview: "stack" },
+  { id: "tap", label: "Tap Tempo", preview: "tap" },
+];
 const BPM_SEND_INTERVAL_MS = 33;
 const LONG_PRESS_DELAY_MS = 400;
 const LONG_PRESS_REPEAT_MS = 100;
@@ -25,6 +31,7 @@ const elements = {
   connection: document.querySelector("#connection"),
   statusText: document.querySelector("[data-status-text]"),
   share: document.querySelector("#share"),
+  openSettings: document.querySelector("#open-settings"),
   beatIndicator: document.querySelector("#beat-indicator"),
   bpmDisplay: document.querySelector("#bpm-display"),
   bpmMinus: document.querySelector("#bpm-minus"),
@@ -42,6 +49,27 @@ const elements = {
   shareCopy: document.querySelector("#share-copy"),
   shareNative: document.querySelector("#share-native"),
   shareClose: document.querySelector("#share-close"),
+  shareFallback: document.querySelector("#share-fallback"),
+  settingsModal: document.querySelector("#settings-modal"),
+  settingsClose: document.querySelector("#settings-close"),
+  presetList: document.querySelector("#preset-list"),
+  addPreset: document.querySelector("#add-preset"),
+  controlStyles: document.querySelector("#control-styles"),
+  soundOptions: document.querySelector("#sound-options"),
+  volumeSlider: document.querySelector("#volume-slider"),
+  volumeValue: document.querySelector("#volume-value"),
+  previewToggle: document.querySelector("#preview-toggle"),
+  backgroundAudioToggle: document.querySelector("#background-audio-toggle"),
+  theme: document.querySelector("#theme-select"),
+  lastSynced: document.querySelector("#last-synced"),
+  forceResync: document.querySelector("#force-resync"),
+  presetModal: document.querySelector("#preset-modal"),
+  presetForm: document.querySelector("#preset-form"),
+  presetModalTitle: document.querySelector("#preset-modal-title"),
+  presetId: document.querySelector("#preset-id"),
+  presetBpm: document.querySelector("#preset-bpm"),
+  presetMeter: document.querySelector("#preset-meter"),
+  presetName: document.querySelector("#preset-name"),
 };
 
 const scheduler = new AudioScheduler((beat, delay) => flashBeat(beat, delay));
@@ -58,7 +86,15 @@ const autoplayGate = createAutoplayGestureGate({
 });
 let socket = null;
 let state = createInitialState();
-let settings = { control_style: "slider", theme: "auto", sound_id: "classic", volume: 80, updated_at: null };
+let settings = {
+  control_style: "slider",
+  theme: "auto",
+  sound_id: "classic",
+  volume: 80,
+  preview_sound_on_change: true,
+  background_audio: true,
+  updated_at: null,
+};
 let presets = [];
 let tapTimes = [];
 let reconnectAttempt = 0;
@@ -67,6 +103,7 @@ let offline = !navigator.onLine;
 let pendingBpm = null;
 let bpmTimer = null;
 let lastBpmSentAt = 0;
+let volumeSaveTimer = null;
 
 bindControls();
 bindNetworkEvents();
@@ -86,7 +123,9 @@ function bindControls() {
     copyButton: elements.shareCopy,
     nativeShareButton: elements.shareNative,
     closeButton: elements.shareClose,
+    fallbackHint: elements.shareFallback,
   });
+  bindSettingsModal();
   bindPressStepper(elements.bpmMinus, -1);
   bindPressStepper(elements.bpmPlus, 1);
   elements.play.addEventListener("pointerdown", (event) => {
@@ -99,11 +138,53 @@ function bindControls() {
   });
   elements.editPresets.addEventListener("pointerdown", (event) => {
     event.preventDefault();
-    location.href = "/settings#presets-heading";
+    openSettings();
   });
   document.addEventListener("visibilitychange", handleVisibilityChange);
   document.addEventListener("keydown", handleKeyboard);
   renderMeterButtons();
+}
+
+function bindSettingsModal() {
+  elements.openSettings.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    openSettings();
+  });
+  elements.settingsClose.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    elements.settingsModal.close();
+  });
+  elements.settingsModal.addEventListener("pointerdown", (event) => {
+    if (event.target === elements.settingsModal) {
+      elements.settingsModal.close();
+    }
+  });
+  elements.theme.addEventListener("change", () => saveSettings({ theme: elements.theme.value }));
+  elements.volumeSlider.addEventListener("input", handleVolumeInput);
+  elements.volumeSlider.addEventListener("change", () => saveSettings({ volume: Number(elements.volumeSlider.value) }));
+  elements.previewToggle.addEventListener("change", () =>
+    saveSettings({ preview_sound_on_change: elements.previewToggle.checked }),
+  );
+  elements.backgroundAudioToggle.addEventListener("change", () =>
+    saveSettings({ background_audio: elements.backgroundAudioToggle.checked }),
+  );
+  elements.forceResync.addEventListener("click", () => {
+    loadSettings();
+    loadPresets();
+  });
+  elements.addPreset.addEventListener("click", () => openPresetEditor());
+  elements.presetForm.addEventListener("submit", savePresetForm);
+}
+
+function openSettings() {
+  if (typeof elements.settingsModal.showModal === "function") {
+    if (!elements.settingsModal.open) {
+      elements.settingsModal.showModal();
+    }
+  } else {
+    elements.settingsModal.setAttribute("open", "");
+  }
+  // Settings modal stays on the same page, so the metronome scheduler is never torn down.
 }
 
 function bindNetworkEvents() {
@@ -141,6 +222,7 @@ async function loadSettings() {
       throw new Error(`Settings request failed: ${response.status}`);
     }
     applySettings(await response.json());
+    markSynced();
   } catch {
     showMessage("Settings could not be loaded. Using local controls.", true);
     renderCurrentTempoControl();
@@ -155,8 +237,10 @@ async function loadPresets() {
     }
     presets = await response.json();
     renderPresets();
+    renderSettingsPresetList();
   } catch {
     renderPresets();
+    renderSettingsPresetList();
   }
 }
 
@@ -203,9 +287,12 @@ function handleSocketMessage(event) {
       applyState(message.state);
     } else if (message.type === "settings:update" && message.settings) {
       applySettings(message.settings);
+      markSynced();
     } else if (message.type === "presets:update") {
       presets = message.presets ?? [];
       renderPresets();
+      renderSettingsPresetList();
+      markSynced();
     } else if (message.type === "error") {
       showMessage(message.message || "Server rejected the last change.", true);
     }
@@ -237,6 +324,18 @@ function applySettings(nextSettings) {
   applyTheme();
   renderCurrentTempoControl();
   renderPresets();
+  renderControlStyleCards();
+  renderSoundOptionCards();
+  renderSettingsPresetList();
+  syncSettingsControls();
+}
+
+function syncSettingsControls() {
+  elements.theme.value = settings.theme ?? "auto";
+  elements.volumeSlider.value = String(settings.volume ?? 80);
+  elements.volumeValue.textContent = `${settings.volume ?? 80}%`;
+  elements.previewToggle.checked = settings.preview_sound_on_change !== false;
+  elements.backgroundAudioToggle.checked = settings.background_audio !== false;
 }
 
 function applyTheme() {
@@ -264,6 +363,7 @@ function applyState(nextState) {
     scheduler,
     visibilityState: document.visibilityState,
     onAutoplayBlocked: () => autoplayGate.request(),
+    backgroundAudio: settings.background_audio !== false,
   });
 }
 
@@ -312,7 +412,7 @@ function renderPresets() {
     button.className = "preset-chip";
     button.dataset.presetId = preset.id;
     button.innerHTML = `<strong>${preset.bpm}</strong><span>${preset.meter}</span>`;
-    const gesture = createPresetTapGesture((event) => {
+    const gesture = createPresetTapGesture(() => {
       button.classList.add("flash");
       setTimeout(() => button.classList.remove("flash"), 150);
       sendDiscrete({ type: "apply_preset", bpm: preset.bpm, meter: preset.meter });
@@ -331,10 +431,243 @@ function renderPresets() {
     });
     button.addEventListener("contextmenu", (event) => {
       event.preventDefault();
-      location.href = `/settings#preset-${encodeURIComponent(preset.id)}`;
+      openSettings();
     });
     elements.presetTrack.append(button);
   }
+}
+
+function renderControlStyleCards() {
+  elements.controlStyles.replaceChildren();
+  for (const control of CONTROL_STYLES) {
+    const card = document.createElement("button");
+    card.className = "radio-card";
+    card.type = "button";
+    card.setAttribute("role", "radio");
+    card.setAttribute("aria-checked", String(settings.control_style === control.id));
+    card.innerHTML = `
+      <span class="control-preview ${control.preview}" aria-hidden="true"></span>
+      <strong>${control.label}</strong>
+    `;
+    card.addEventListener("click", () => saveSettings({ control_style: control.id }));
+    elements.controlStyles.append(card);
+  }
+}
+
+function renderSoundOptionCards() {
+  elements.soundOptions.replaceChildren();
+  for (const sound of SOUND_OPTIONS) {
+    const card = document.createElement("div");
+    card.className = "radio-card sound-card";
+    card.tabIndex = 0;
+    card.setAttribute("role", "radio");
+    card.setAttribute("aria-checked", String(settings.sound_id === sound.id));
+    card.innerHTML = `
+      <span class="sound-mark ${sound.id}" aria-hidden="true"></span>
+      <strong>${sound.name}</strong>
+      <span>${sound.id}</span>
+    `;
+    const playButton = document.createElement("button");
+    playButton.className = "small-button ghost";
+    playButton.type = "button";
+    playButton.textContent = "Play";
+    playButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      previewSound(sound.id, { force: true });
+    });
+    card.append(playButton);
+    card.addEventListener("click", () => {
+      const changed = settings.sound_id !== sound.id;
+      saveSettings({ sound_id: sound.id });
+      if (changed && settings.preview_sound_on_change !== false) {
+        previewSound(sound.id);
+      }
+    });
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        const changed = settings.sound_id !== sound.id;
+        saveSettings({ sound_id: sound.id });
+        if (changed && settings.preview_sound_on_change !== false) {
+          previewSound(sound.id);
+        }
+      }
+    });
+    elements.soundOptions.append(card);
+  }
+}
+
+function renderSettingsPresetList() {
+  elements.presetList.replaceChildren();
+  for (const preset of presets) {
+    const row = document.createElement("article");
+    row.className = "preset-row";
+    row.draggable = true;
+    row.dataset.id = preset.id;
+    const nameLabel = preset.name ? ` - ${escapeText(preset.name)}` : "";
+    row.innerHTML = `
+      <div>
+        <strong>${preset.bpm} BPM</strong>
+        <span>${preset.meter}${nameLabel}</span>
+      </div>
+      <div class="preset-row-actions">
+        <button type="button" data-action="up" aria-label="Move preset up">▲</button>
+        <button type="button" data-action="down" aria-label="Move preset down">▼</button>
+        <button type="button" data-action="edit">Edit</button>
+        <button type="button" data-action="delete">Delete</button>
+      </div>
+    `;
+    row.addEventListener("dragstart", (event) => event.dataTransfer.setData("text/plain", preset.id));
+    row.addEventListener("dragover", (event) => event.preventDefault());
+    row.addEventListener("drop", (event) => {
+      event.preventDefault();
+      movePreset(event.dataTransfer.getData("text/plain"), preset.id);
+    });
+    row.addEventListener("click", (event) => handlePresetRowAction(event, preset));
+    elements.presetList.append(row);
+  }
+}
+
+function handlePresetRowAction(event, preset) {
+  const action = event.target.closest("button")?.dataset.action;
+  if (!action) {
+    return;
+  }
+  if (action === "edit") {
+    openPresetEditor(preset);
+  } else if (action === "delete") {
+    deletePresetRow(preset.id);
+  } else if (action === "up" || action === "down") {
+    shiftPreset(preset.id, action === "up" ? -1 : 1);
+  }
+}
+
+function openPresetEditor(preset = null) {
+  elements.presetModalTitle.textContent = preset ? "Edit Preset" : "Add Preset";
+  elements.presetId.value = preset?.id ?? "";
+  elements.presetBpm.value = String(preset?.bpm ?? 120);
+  elements.presetMeter.value = preset?.meter ?? "4/4";
+  elements.presetName.value = preset?.name ?? "";
+  if (typeof elements.presetModal.showModal === "function") {
+    elements.presetModal.showModal();
+  } else {
+    elements.presetModal.setAttribute("open", "");
+  }
+}
+
+async function savePresetForm(event) {
+  if (event.submitter?.value === "cancel") {
+    return;
+  }
+  event.preventDefault();
+  const id = elements.presetId.value;
+  const payload = {
+    bpm: Number(elements.presetBpm.value),
+    meter: elements.presetMeter.value,
+    name: elements.presetName.value.trim() || null,
+  };
+  const response = await fetch(id ? `/api/presets/${id}` : "/api/presets", {
+    method: id ? "PATCH" : "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (response.ok) {
+    elements.presetModal.close();
+    await loadPresets();
+  }
+}
+
+async function deletePresetRow(id) {
+  const response = await fetch(`/api/presets/${id}`, { method: "DELETE" });
+  if (response.ok) {
+    await loadPresets();
+  }
+}
+
+function shiftPreset(id, offset) {
+  const ids = presets.map((preset) => preset.id);
+  const index = ids.indexOf(id);
+  const nextIndex = index + offset;
+  if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) {
+    return;
+  }
+  ids.splice(index, 1);
+  ids.splice(nextIndex, 0, id);
+  reorderPresetIds(ids);
+}
+
+function movePreset(sourceId, targetId) {
+  if (!sourceId || sourceId === targetId) {
+    return;
+  }
+  const ids = presets.map((preset) => preset.id).filter((id) => id !== sourceId);
+  ids.splice(ids.indexOf(targetId), 0, sourceId);
+  reorderPresetIds(ids);
+}
+
+async function reorderPresetIds(ids) {
+  const response = await fetch("/api/presets/reorder", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  if (response.ok) {
+    presets = await response.json();
+    renderPresets();
+    renderSettingsPresetList();
+    markSynced();
+  }
+}
+
+function handleVolumeInput() {
+  const volume = Number(elements.volumeSlider.value);
+  settings = { ...settings, volume };
+  elements.volumeValue.textContent = `${volume}%`;
+  scheduler.setVolume(volume);
+  if (settings.preview_sound_on_change !== false) {
+    previewSound(settings.sound_id);
+  }
+  clearTimeout(volumeSaveTimer);
+  volumeSaveTimer = setTimeout(() => saveSettings({ volume }), 180);
+}
+
+async function previewSound(soundId = settings.sound_id, { force = false } = {}) {
+  if (!force && settings.preview_sound_on_change === false) {
+    return;
+  }
+  try {
+    await scheduler.playPreview({ soundId, volume: Number(elements.volumeSlider.value) });
+  } catch {
+    showMessage("Audio is blocked. Tap anywhere to enable preview.", true);
+  }
+}
+
+async function saveSettings(patch) {
+  try {
+    const response = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!response.ok) {
+      throw new Error(`Settings update failed: ${response.status}`);
+    }
+    applySettings(await response.json());
+    markSynced();
+  } catch {
+    showMessage("Settings could not be saved. Check your connection.", true);
+  }
+}
+
+function markSynced() {
+  if (!elements.lastSynced) {
+    return;
+  }
+  elements.lastSynced.textContent = `Last synced: ${new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  })}`;
 }
 
 function bindPressStepper(button, direction) {
@@ -491,6 +824,10 @@ function showMessage(text, isError) {
 
 async function handleVisibilityChange() {
   if (document.visibilityState === "hidden") {
+    if (settings.background_audio !== false) {
+      // Keep audio alive while the tab is hidden / browser minimized.
+      return;
+    }
     await scheduler.suspend();
     return;
   }
@@ -500,8 +837,16 @@ async function handleVisibilityChange() {
       scheduler,
       visibilityState: document.visibilityState,
       onAutoplayBlocked: () => autoplayGate.request(),
+      backgroundAudio: settings.background_audio !== false,
     });
   }
+}
+
+function escapeText(value) {
+  return String(value).replace(/[&<>"']/g, (character) => {
+    const replacements = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" };
+    return replacements[character];
+  });
 }
 
 function registerServiceWorker() {

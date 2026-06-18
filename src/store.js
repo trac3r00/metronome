@@ -12,6 +12,8 @@ const DEFAULT_SETTINGS = Object.freeze({
   fullscreen_only: false,
   sound_id: "classic",
   volume: 80,
+  preview_sound_on_change: true,
+  background_audio: true,
 });
 const CONTROL_STYLES = new Set(["dial", "slider", "wheel", "tap"]);
 const THEMES = new Set(["auto", "light", "dark"]);
@@ -49,6 +51,8 @@ export class StateStore {
         fullscreen_only INTEGER NOT NULL DEFAULT 0,
         sound_id TEXT NOT NULL DEFAULT 'classic',
         volume INTEGER NOT NULL DEFAULT 80,
+        preview_sound_on_change INTEGER NOT NULL DEFAULT 1,
+        background_audio INTEGER NOT NULL DEFAULT 1,
         updated_at INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS meta (
@@ -73,7 +77,7 @@ export class StateStore {
     this.ensureSettingsColumns();
     this.db
       .prepare(
-        "INSERT OR IGNORE INTO settings (id, control_style, theme, fullscreen_only, sound_id, volume, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO settings (id, control_style, theme, fullscreen_only, sound_id, volume, preview_sound_on_change, background_audio, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         DEFAULT_SETTINGS.control_style,
@@ -81,6 +85,8 @@ export class StateStore {
         DEFAULT_SETTINGS.fullscreen_only ? 1 : 0,
         DEFAULT_SETTINGS.sound_id,
         DEFAULT_SETTINGS.volume,
+        DEFAULT_SETTINGS.preview_sound_on_change ? 1 : 0,
+        DEFAULT_SETTINGS.background_audio ? 1 : 0,
         now,
       );
     this.applySchemaMigrations();
@@ -121,6 +127,8 @@ export class StateStore {
     this.addSettingsColumnIfMissing(columns, "fullscreen_only", "fullscreen_only INTEGER NOT NULL DEFAULT 0");
     this.addSettingsColumnIfMissing(columns, "sound_id", "sound_id TEXT NOT NULL DEFAULT 'classic'");
     this.addSettingsColumnIfMissing(columns, "volume", "volume INTEGER NOT NULL DEFAULT 80");
+    this.addSettingsColumnIfMissing(columns, "preview_sound_on_change", "preview_sound_on_change INTEGER NOT NULL DEFAULT 1");
+    this.addSettingsColumnIfMissing(columns, "background_audio", "background_audio INTEGER NOT NULL DEFAULT 1");
   }
 
   addSettingsColumnIfMissing(columns, name, definition) {
@@ -206,6 +214,8 @@ export class StateStore {
       theme: settings.theme,
       sound_id: settings.sound_id,
       volume: settings.volume,
+      preview_sound_on_change: Boolean(settings.preview_sound_on_change),
+      background_audio: Boolean(settings.background_audio),
       updated_at: settings.updated_at,
       presets: this.listPresets(),
     };
@@ -219,11 +229,29 @@ export class StateStore {
       theme: patch.theme === undefined ? current.theme : parseTheme(patch.theme),
       sound_id: patch.sound_id === undefined ? current.sound_id : parseSoundId(patch.sound_id),
       volume: patch.volume === undefined ? current.volume : parseVolume(patch.volume),
+      preview_sound_on_change:
+        patch.preview_sound_on_change === undefined
+          ? current.preview_sound_on_change
+          : parseBoolean(patch.preview_sound_on_change, "preview_sound_on_change"),
+      background_audio:
+        patch.background_audio === undefined
+          ? current.background_audio
+          : parseBoolean(patch.background_audio, "background_audio"),
       updated_at: Date.now(),
     };
     this.db
-      .prepare("UPDATE settings SET control_style = ?, theme = ?, sound_id = ?, volume = ?, updated_at = ? WHERE id = 1")
-      .run(next.control_style, next.theme, next.sound_id, next.volume, next.updated_at);
+      .prepare(
+        "UPDATE settings SET control_style = ?, theme = ?, sound_id = ?, volume = ?, preview_sound_on_change = ?, background_audio = ?, updated_at = ? WHERE id = 1",
+      )
+      .run(
+        next.control_style,
+        next.theme,
+        next.sound_id,
+        next.volume,
+        next.preview_sound_on_change ? 1 : 0,
+        next.background_audio ? 1 : 0,
+        next.updated_at,
+      );
     return this.getSettings();
   }
 
@@ -365,6 +393,16 @@ function parseVolume(value) {
     throw new StoreValidationError("Volume must be between 0 and 100");
   }
   return value;
+}
+
+function parseBoolean(value, field) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (value === 0 || value === 1) {
+    return Boolean(value);
+  }
+  throw new StoreValidationError(`${field} must be true or false`);
 }
 
 function parseBpm(value) {

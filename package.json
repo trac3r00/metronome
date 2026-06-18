@@ -1,6 +1,6 @@
 {
   "name": "church-broadcast-metronome",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Synchronized church broadcast metronome PWA",
   "type": "module",
   "main": "src/server.js",

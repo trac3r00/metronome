@@ -98,6 +98,10 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH } = {}) {
     }
   });
 
+  app.get(["/settings", "/settings.html"], (_request, response) => {
+    response.redirect(301, "/");
+  });
+
   app.use(express.static(PUBLIC_DIR, { extensions: ["html"] }));
 
   wss.on("connection", (socket) => {

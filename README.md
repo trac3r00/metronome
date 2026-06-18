@@ -12,6 +12,10 @@ Screenshot placeholder: add `artifacts/screenshot.png` after capturing the deplo
 - Meter controls for `4/4`, `3/4`, and `6/8`.
 - BPM slider, numeric BPM entry, tap tempo, and selectable metronome sounds.
 - Ten preset slots that store BPM plus meter.
+- One-tap Share modal with QR code, copy link, and native Share / AirDrop (iOS, Android).
+- Settings live in an in-page modal — the metronome keeps playing while you change presets, sounds, or theme.
+- Optional preview-on-change for sounds and volume, toggleable in settings (default on).
+- Optional background playback that keeps the click going when the tab is hidden or the browser is minimized (default on).
 - WebSocket sync across phones, tablets, and booth computers.
 - Automatic WebSocket reconnect with exponential backoff.
 - Offline fallback for local-only operation from the service worker cache.
