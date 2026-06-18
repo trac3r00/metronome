@@ -410,7 +410,7 @@ describe("static PWA surface", () => {
     ]);
 
     // Then: the app shell and PWA files are present.
-    assert.match(index, /Church Broadcast Metronome/);
+    assert.match(index, /<title>Metronome<\/title>/);
     assert.doesNotMatch(index, /fullscreen/i);
     assert.match(index, /id="settings-modal"/);
     assert.match(index, /id="share-modal"/);
@@ -425,7 +425,7 @@ describe("static PWA surface", () => {
     assert.match(tempoScript, /renderTempoControl/);
     assert.equal(settingsRedirect.status, 301);
     assert.equal(settingsRedirect.headers.get("location"), "/");
-    assert.equal(manifest.name, "Church Broadcast Metronome");
+    assert.equal(manifest.name, "Metronome");
     assert.equal(manifest.display, "standalone");
     assert.match(worker, /install/);
     assert.match(worker, /\.keys\(\)/);

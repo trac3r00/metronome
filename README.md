@@ -1,4 +1,4 @@
-# Church Broadcast Metronome
+# Metronome
 
 A single-room synchronized metronome for church broadcast teams. The server is the source of truth for BPM, meter, playback state, and preset slots, and every browser stays in sync over WebSockets.
 

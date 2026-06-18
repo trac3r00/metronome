@@ -90,7 +90,7 @@ export function nativeShareLabel(navigatorLike) {
 
 export function getNativeSharePayload(locationLike) {
   return {
-    title: "Church Metronome",
+    title: "Metronome",
     url: locationLike.href,
   };
 }

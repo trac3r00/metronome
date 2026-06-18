@@ -152,7 +152,7 @@ describe("client guard helpers", () => {
     assert.equal(hasNativeShare(supportedNavigator), true);
     assert.equal(hasNativeShare(unsupportedNavigator), false);
     assert.deepEqual(getNativeSharePayload(location), {
-      title: "Church Metronome",
+      title: "Metronome",
       url: "https://example.test/?room=main",
     });
   });
