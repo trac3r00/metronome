@@ -152,7 +152,7 @@ describe("client guard helpers", () => {
     assert.equal(hasNativeShare(supportedNavigator), true);
     assert.equal(hasNativeShare(unsupportedNavigator), false);
     assert.deepEqual(getNativeSharePayload(location), {
-      title: "Church Metronome",
+      title: "Metronome",
       url: "https://example.test/?room=main",
     });
   });
@@ -185,6 +185,37 @@ describe("client guard helpers", () => {
 
     assert.equal(scheduler.starts, 0);
     assert.equal(scheduler.stops, 1);
+  });
+
+  it("stops a running scheduler when the tab is hidden and background audio is disabled", async () => {
+    const scheduler = new FakeScheduler(true);
+    const state = { bpm: 120, beats_per_bar: 4, beat_unit: 4, playing: true };
+
+    await syncSchedulerToState({
+      state,
+      scheduler,
+      visibilityState: "hidden",
+      backgroundAudio: false,
+      onAutoplayBlocked() {},
+    });
+
+    assert.equal(scheduler.stops, 1);
+  });
+
+  it("keeps a running scheduler going when the tab is hidden and background audio is enabled", async () => {
+    const scheduler = new FakeScheduler(true);
+    const state = { bpm: 120, beats_per_bar: 4, beat_unit: 4, playing: true };
+
+    await syncSchedulerToState({
+      state,
+      scheduler,
+      visibilityState: "hidden",
+      backgroundAudio: true,
+      onAutoplayBlocked() {},
+    });
+
+    assert.equal(scheduler.stops, 0);
+    assert.equal(scheduler.starts, 0);
   });
 
   it("gates autoplay resume until the next user interaction", async () => {

@@ -1,33 +1,54 @@
 let qrLibraryPromise = null;
 
-export function bindShareModal({ openButton, modal, qrTarget, urlText, copyButton, closeButton, nativeShareButton }) {
+export function bindShareModal({
+  openButton,
+  modal,
+  qrTarget,
+  urlText,
+  copyButton,
+  closeButton,
+  nativeShareButton,
+  fallbackHint,
+}) {
   const getShareUrl = () => `${window.location.origin}/`;
+  const shareSupported = hasNativeShare(navigator);
+
+  if (nativeShareButton) {
+    nativeShareButton.hidden = !shareSupported;
+    const label = nativeShareButton.querySelector("[data-share-label]");
+    if (label) {
+      label.textContent = nativeShareLabel(navigator);
+    }
+  }
+  if (fallbackHint) {
+    fallbackHint.hidden = shareSupported;
+  }
 
   const open = async () => {
     const shareUrl = getShareUrl();
     urlText.textContent = shareUrl;
     qrTarget.replaceChildren();
-    await loadQrLibrary();
-    new window.QRCode(qrTarget, {
-      text: shareUrl,
-      width: 192,
-      height: 192,
-      correctLevel: window.QRCode.CorrectLevel.M,
-    });
-    modal.showModal();
+    try {
+      await loadQrLibrary();
+      new window.QRCode(qrTarget, {
+        text: shareUrl,
+        width: 192,
+        height: 192,
+        correctLevel: window.QRCode.CorrectLevel.M,
+      });
+    } catch {
+      // QR rendering is optional; the link is always available.
+    }
+    showModal(modal);
   };
 
   const close = () => modal.close();
-
-  if (nativeShareButton) {
-    nativeShareButton.hidden = !hasNativeShare(navigator);
-  }
 
   openButton.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     open().catch(() => {
       urlText.textContent = getShareUrl();
-      modal.showModal();
+      showModal(modal);
     });
   });
   closeButton.addEventListener("pointerdown", (event) => {
@@ -56,11 +77,32 @@ export function hasNativeShare(navigatorLike) {
   return typeof navigatorLike?.share === "function";
 }
 
+export function nativeShareLabel(navigatorLike) {
+  const ua = String(navigatorLike?.userAgent ?? "");
+  if (/iPhone|iPad|iPod|Macintosh/i.test(ua)) {
+    return "Share / AirDrop";
+  }
+  if (/Android/i.test(ua)) {
+    return "Share";
+  }
+  return "Share";
+}
+
 export function getNativeSharePayload(locationLike) {
   return {
-    title: "Church Metronome",
+    title: "Metronome",
     url: locationLike.href,
   };
+}
+
+function showModal(modal) {
+  if (typeof modal.showModal === "function") {
+    if (!modal.open) {
+      modal.showModal();
+    }
+    return;
+  }
+  modal.setAttribute("open", "");
 }
 
 function loadQrLibrary() {
