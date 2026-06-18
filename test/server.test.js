@@ -207,6 +207,8 @@ describe("server settings and preset sync", () => {
     assert.equal(settings.theme, "auto");
     assert.equal(settings.sound_id, "classic");
     assert.equal(settings.volume, 80);
+    assert.equal(settings.preview_sound_on_change, true);
+    assert.equal(settings.background_audio, true);
     assert.equal(Object.hasOwn(settings, "fullscreen_only"), false);
     assert.deepEqual(
       settings.presets.map(({ bpm, meter, name, position }) => ({ bpm, meter, name, position })),
@@ -229,7 +231,15 @@ describe("server settings and preset sync", () => {
     const response = await fetchJson(`${baseUrl}/api/settings`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ control_style: "wheel", theme: "dark", sound_id: "wood", volume: 35, fullscreen_only: true }),
+      body: JSON.stringify({
+        control_style: "wheel",
+        theme: "dark",
+        sound_id: "wood",
+        volume: 35,
+        fullscreen_only: true,
+        preview_sound_on_change: false,
+        background_audio: false,
+      }),
     });
     const broadcast = await readJson(client);
 
@@ -238,6 +248,8 @@ describe("server settings and preset sync", () => {
     assert.equal(response.theme, "dark");
     assert.equal(response.sound_id, "wood");
     assert.equal(response.volume, 35);
+    assert.equal(response.preview_sound_on_change, false);
+    assert.equal(response.background_audio, false);
     assert.equal(Object.hasOwn(response, "fullscreen_only"), false);
     assert.equal(broadcast.type, "settings:update");
     assert.deepEqual(broadcast.settings, response);
@@ -386,14 +398,13 @@ describe("static PWA surface", () => {
     const { baseUrl } = await startTestServer();
 
     // When: the browser requests the installable app assets.
-    const [index, appScript, qrScript, tempoScript, settings, settingsScript, manifest, worker] =
+    const [index, appScript, qrScript, tempoScript, settingsRedirect, manifest, worker] =
       await Promise.all([
       fetchText(`${baseUrl}/`),
       fetchText(`${baseUrl}/app.js`),
       fetchText(`${baseUrl}/qr-share.js`),
       fetchText(`${baseUrl}/tempo-controls.js`),
-      fetchText(`${baseUrl}/settings`),
-      fetchText(`${baseUrl}/settings.js`),
+      fetch(`${baseUrl}/settings`, { redirect: "manual" }),
       fetchJson(`${baseUrl}/manifest.webmanifest`),
       fetchText(`${baseUrl}/sw.js`),
     ]);
@@ -401,14 +412,19 @@ describe("static PWA surface", () => {
     // Then: the app shell and PWA files are present.
     assert.match(index, /Church Broadcast Metronome/);
     assert.doesNotMatch(index, /fullscreen/i);
+    assert.match(index, /id="settings-modal"/);
+    assert.match(index, /id="share-modal"/);
+    assert.match(index, /preview-toggle/);
+    assert.match(index, /background-audio-toggle/);
     assert.match(appScript, /tempo-control/);
+    assert.match(appScript, /background_audio/);
+    assert.match(appScript, /preview_sound_on_change/);
     assert.doesNotMatch(appScript, /bindFullscreenToggle|fullscreen_only/);
     assert.match(qrScript, /qrcode.min.js/);
+    assert.match(qrScript, /AirDrop/);
     assert.match(tempoScript, /renderTempoControl/);
-    assert.match(settings, /Settings/);
-    assert.match(settings, /Sound/);
-    assert.match(settingsScript, /preset-list/);
-    assert.match(settingsScript, /sound_id/);
+    assert.equal(settingsRedirect.status, 301);
+    assert.equal(settingsRedirect.headers.get("location"), "/");
     assert.equal(manifest.name, "Church Broadcast Metronome");
     assert.equal(manifest.display, "standalone");
     assert.match(worker, /install/);
@@ -416,6 +432,7 @@ describe("static PWA surface", () => {
     assert.match(worker, /caches\.delete/);
     assert.match(worker, /church-metronome-/);
     assert.doesNotMatch(worker, /fullscreen\.js/);
+    assert.doesNotMatch(worker, /settings\.js/);
   });
 
   it("has no Korean user-facing strings in public HTML or JavaScript", async () => {

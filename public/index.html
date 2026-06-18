@@ -22,8 +22,8 @@
             <span data-status-text>Connecting</span>
           </div>
           <div class="topbar-actions">
-            <button id="share" class="icon-button" type="button" aria-label="Quick share">⤴</button>
-            <a class="icon-button" href="/settings" aria-label="Open settings">⚙</a>
+            <button id="share" class="icon-button" type="button" aria-label="Share">⤴</button>
+            <button id="open-settings" class="icon-button" type="button" aria-label="Open settings">⚙</button>
           </div>
         </header>
 
@@ -64,18 +64,138 @@
     <dialog id="share-modal" class="share-modal" aria-labelledby="share-title">
       <article class="share-card">
         <header>
-          <h2 id="share-title">Quick Share</h2>
+          <h2 id="share-title">Share</h2>
           <button id="share-close" class="icon-button" type="button" aria-label="Close">✕</button>
         </header>
         <div id="share-qr" class="share-qr" aria-label="QR code"></div>
-        <p class="share-hint">Scan with another device on the same Wi-Fi to join</p>
+        <p class="share-hint">Scan with another device on the same Wi-Fi, or use Share / AirDrop below</p>
         <code id="share-url" class="share-url"></code>
-        <button id="share-copy" class="small-button" type="button">Copy</button>
-        <button id="share-native" class="small-button share-native" type="button" hidden>
-          <span aria-hidden="true">⤴</span>
-          <span>Share</span>
-        </button>
+        <div class="share-actions">
+          <button id="share-copy" class="small-button" type="button">Copy link</button>
+          <button id="share-native" class="small-button share-native" type="button" hidden>
+            <span aria-hidden="true">⤴</span>
+            <span data-share-label>Share</span>
+          </button>
+        </div>
+        <p id="share-fallback" class="share-fallback" hidden>Tip: on iPhone, tap Copy link then paste in Messages or AirDrop. On Android, paste in any chat app.</p>
       </article>
+    </dialog>
+
+    <dialog id="settings-modal" class="settings-modal" aria-labelledby="settings-title">
+      <article class="settings-card">
+        <header class="settings-modal-header">
+          <h2 id="settings-title">Settings</h2>
+          <button id="settings-close" class="icon-button" type="button" aria-label="Close settings">✕</button>
+        </header>
+        <div class="settings-body">
+          <section class="settings-section" aria-labelledby="presets-heading">
+            <div class="section-heading">
+              <h3 id="presets-heading">Presets</h3>
+              <button id="add-preset" class="small-button" type="button">+ Add preset</button>
+            </div>
+            <div id="preset-list" class="preset-list"></div>
+          </section>
+
+          <section class="settings-section" aria-labelledby="control-heading">
+            <div class="section-heading">
+              <h3 id="control-heading">Tempo Control Style</h3>
+            </div>
+            <div id="control-styles" class="radio-card-grid" role="radiogroup" aria-label="Tempo control style"></div>
+          </section>
+
+          <section class="settings-section" aria-labelledby="sound-heading">
+            <div class="section-heading">
+              <h3 id="sound-heading">Sound</h3>
+            </div>
+            <div id="sound-options" class="radio-card-grid sound-grid" role="radiogroup" aria-label="Metronome sound"></div>
+            <label class="volume-control">
+              <span>Volume <strong id="volume-value">80%</strong></span>
+              <input id="volume-slider" type="range" min="0" max="100" value="80">
+            </label>
+            <label class="toggle-row">
+              <input id="preview-toggle" type="checkbox" checked>
+              <span>
+                <strong>Preview sound when changing</strong>
+                <small>Play a short sample when you tap a sound or move the volume slider.</small>
+              </span>
+            </label>
+          </section>
+
+          <section class="settings-section" aria-labelledby="playback-heading">
+            <div class="section-heading">
+              <h3 id="playback-heading">Playback</h3>
+            </div>
+            <label class="toggle-row">
+              <input id="background-audio-toggle" type="checkbox" checked>
+              <span>
+                <strong>Keep playing in background</strong>
+                <small>Continue the click while the tab is hidden or the browser is minimized.</small>
+              </span>
+            </label>
+          </section>
+
+          <section class="settings-section" aria-labelledby="display-heading">
+            <div class="section-heading">
+              <h3 id="display-heading">Theme</h3>
+            </div>
+            <div class="field-stack">
+              <label>
+                <span>Theme</span>
+                <select id="theme-select">
+                  <option value="auto">Auto</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section class="settings-section" aria-labelledby="sync-heading">
+            <div class="section-heading">
+              <h3 id="sync-heading">Sync</h3>
+            </div>
+            <div class="sync-panel">
+              <p id="last-synced">Last synced: never</p>
+              <button id="force-resync" class="small-button" type="button">Force resync</button>
+            </div>
+          </section>
+        </div>
+      </article>
+    </dialog>
+
+    <dialog id="preset-modal" class="preset-modal">
+      <form method="dialog" id="preset-form">
+        <header>
+          <h2 id="preset-modal-title">Add Preset</h2>
+          <button class="icon-button" value="cancel" type="submit" aria-label="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 6 6 18"></path>
+              <path d="m6 6 12 12"></path>
+            </svg>
+          </button>
+        </header>
+        <input id="preset-id" type="hidden">
+        <label>
+          <span>BPM</span>
+          <input id="preset-bpm" type="number" min="30" max="300" inputmode="numeric" required>
+        </label>
+        <label>
+          <span>Meter</span>
+          <select id="preset-meter" required>
+            <option value="4/4">4/4</option>
+            <option value="3/4">3/4</option>
+            <option value="6/8">6/8</option>
+          </select>
+        </label>
+        <label>
+          <span>Name</span>
+          <input id="preset-name" type="text" maxlength="40">
+        </label>
+        <menu>
+          <button class="small-button ghost" value="cancel" type="submit">Cancel</button>
+          <button class="small-button" value="default" type="submit">Save</button>
+        </menu>
+      </form>
     </dialog>
   </body>
 </html>

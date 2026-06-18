@@ -125,8 +125,8 @@ export function applyLocalMessage(state, message) {
   }
 }
 
-export async function syncSchedulerToState({ state, scheduler, visibilityState, onAutoplayBlocked }) {
-  if (visibilityState === "hidden") {
+export async function syncSchedulerToState({ state, scheduler, visibilityState, onAutoplayBlocked, backgroundAudio = false }) {
+  if (visibilityState === "hidden" && !backgroundAudio) {
     if (scheduler.isRunning) {
       scheduler.stop();
     }
