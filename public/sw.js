@@ -1,4 +1,4 @@
-const CACHE_NAME = "church-metronome-v4";
+const CACHE_NAME = "church-metronome-v5";
 const ASSETS = [
   "/",
   "/app.js",
@@ -6,6 +6,7 @@ const ASSETS = [
   "/qr-share.js",
   "/audio.js",
   "/client-utils.js",
+  "/scheduler-worker.js",
   "/vendor/qrcode.min.js",
   "/styles.css",
   "/manifest.webmanifest",

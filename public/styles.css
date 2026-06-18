@@ -1215,3 +1215,78 @@ input[type="checkbox"] {
     border-radius: 0;
   }
 }
+
+/* --- v1.5: primary share buttons, quick share layout, QR collapse --- */
+
+.share-quick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.1rem;
+  border-radius: 0.75rem;
+  border: 0;
+  font: inherit;
+  font-weight: 600;
+  font-size: 1.05rem;
+  background: var(--color-primary);
+  color: #fff;
+  cursor: pointer;
+  transition: transform 80ms ease, box-shadow 120ms ease;
+}
+
+.primary-button:active {
+  transform: scale(0.98);
+}
+
+.primary-button + .primary-button {
+  background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+  color: var(--color-text);
+}
+
+.share-qr-details {
+  margin-top: 0.5rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-text) 12%, transparent);
+  padding-top: 0.75rem;
+}
+
+.share-qr-details summary {
+  cursor: pointer;
+  padding: 0.4rem 0;
+  font-weight: 500;
+  opacity: 0.85;
+  list-style: none;
+}
+
+.share-qr-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.share-qr-details summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 120ms ease;
+}
+
+.share-qr-details[open] summary::before {
+  content: "▾ ";
+}
+
+.share-qr-details .share-qr {
+  margin: 0.75rem auto 0;
+  display: flex;
+  justify-content: center;
+}
+
+@media (hover: hover) {
+  .primary-button:hover {
+    box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--color-primary) 20%, transparent);
+  }
+}

@@ -4,10 +4,10 @@ import { describe, it } from "node:test";
 import { AudioScheduler, SOUND_OPTIONS, SOUNDS } from "../public/audio.js";
 
 describe("audio scheduler sounds", () => {
-  it("exposes the five selectable metronome sound presets", () => {
+  it("exposes the ten selectable metronome sound presets", () => {
     assert.deepEqual(
       SOUND_OPTIONS.map((sound) => sound.id),
-      ["classic", "wood", "digital", "cowbell", "tick"],
+      ["classic", "wood", "digital", "cowbell", "tick", "snare", "kick", "rim", "shaker", "hihat"],
     );
   });
 

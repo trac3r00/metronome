@@ -4,6 +4,7 @@ export function bindShareModal({
   openButton,
   modal,
   qrTarget,
+  qrDetails,
   urlText,
   copyButton,
   closeButton,
@@ -24,40 +25,59 @@ export function bindShareModal({
     fallbackHint.hidden = shareSupported;
   }
 
-  const open = async () => {
-    const shareUrl = getShareUrl();
-    urlText.textContent = shareUrl;
-    qrTarget.replaceChildren();
+  let qrRendered = false;
+  const renderQr = async () => {
+    if (qrRendered || !qrTarget) {
+      return;
+    }
     try {
       await loadQrLibrary();
+      qrTarget.replaceChildren();
       new window.QRCode(qrTarget, {
-        text: shareUrl,
+        text: getShareUrl(),
         width: 192,
         height: 192,
         correctLevel: window.QRCode.CorrectLevel.M,
       });
+      qrRendered = true;
     } catch {
-      // QR rendering is optional; the link is always available.
+      // QR is optional — copy/share keep working.
+    }
+  };
+
+  const open = () => {
+    urlText.textContent = getShareUrl();
+    if (qrDetails) {
+      qrDetails.open = false;
+      qrRendered = false;
     }
     showModal(modal);
   };
 
   const close = () => modal.close();
 
+  qrDetails?.addEventListener("toggle", () => {
+    if (qrDetails.open) {
+      renderQr();
+    }
+  });
+
   openButton.addEventListener("pointerdown", (event) => {
     event.preventDefault();
-    open().catch(() => {
-      urlText.textContent = getShareUrl();
-      showModal(modal);
-    });
+    open();
   });
   closeButton.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     close();
   });
-  copyButton.addEventListener("pointerdown", (event) => {
+  copyButton.addEventListener("pointerdown", async (event) => {
     event.preventDefault();
-    copyText(getShareUrl()).catch(() => {});
+    try {
+      await copyText(getShareUrl());
+      flashLabel(copyButton, "Copied!");
+    } catch {
+      flashLabel(copyButton, "Copy failed");
+    }
   });
   nativeShareButton?.addEventListener("pointerdown", (event) => {
     event.preventDefault();
@@ -103,6 +123,18 @@ function showModal(modal) {
     return;
   }
   modal.setAttribute("open", "");
+}
+
+function flashLabel(button, message) {
+  const labelHolder = button.querySelector("span:not([aria-hidden])");
+  if (!labelHolder) {
+    return;
+  }
+  const previous = labelHolder.textContent;
+  labelHolder.textContent = message;
+  setTimeout(() => {
+    labelHolder.textContent = previous;
+  }, 1400);
 }
 
 function loadQrLibrary() {

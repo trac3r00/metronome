@@ -9,13 +9,16 @@ Originally built for church broadcast teams, it works just as well for any room 
 - 🎚️ **Live BPM stage** with beat pulse visualization, choice of dial / slider / wheel / tap controls.
 - 🥁 **Meter switching** between `4/4`, `3/4`, and `6/8`.
 - 👆 **Tap Tempo** estimates BPM from your taps.
-- 🔊 **Five click sounds** (classic, wood, digital, cowbell, soft tick) with a volume slider and per-sound preview.
+- 🔊 **Ten click sounds** (classic, wood, digital, cowbell, soft tick, snare, kick, rim, shaker, hi-hat) with a volume slider and per-sound preview.
 - 🗂️ **Preset library** with add / edit / drag-reorder / delete — tap a preset chip on the stage to apply.
-- 📤 **Share modal**: QR code + copy link + native **Share / AirDrop** button (iOS, Android).
+- 📤 **Share modal**: quick-share buttons (native Share / AirDrop + Copy link) first, QR code on demand.
 - ⚙️ **Settings in an in-page modal** — the metronome **keeps playing** while you change anything.
 - 🔇 **Preview-on-change toggle** (default on): turn off the sample click when switching sounds or moving the volume.
 - 📱 **Background playback toggle** (default on): the click keeps going when the tab is hidden or the browser is minimized.
-- 🔌 **WebSocket sync** with exponential-backoff reconnect, and an offline fallback served from the service worker cache.
+- ⏱️ **Web Worker scheduler** keeps timing tight even when the host tab is throttled — no more drifting clicks.
+- 🔌 **HTTP control API + SSE event stream** for StreamDeck, OBS browser sources, shell scripts, etc.
+- 🔐 Optional `METRONOME_API_TOKEN` Bearer auth for the control endpoints.
+- 🌐 **WebSocket sync** with exponential-backoff reconnect, and an offline fallback served from the service worker cache.
 - 🛡️ **Hardened server**: validation, payload caps, burst rate limiting, SQLite persistence, `/healthz` for orchestrators.
 
 ## Quick Start
@@ -45,6 +48,7 @@ The compose file stores SQLite data in the `metronome-data` volume so preset slo
 | `PORT` | `3000` | HTTP and WebSocket port. |
 | `HOST` | `0.0.0.0` | Bind address for the Node server. |
 | `METRONOME_DB_PATH` | `./data/metronome.sqlite` | SQLite file used for room state, presets, and settings. |
+| `METRONOME_API_TOKEN` | _(unset)_ | When set, all write endpoints (`POST/PUT/PATCH/DELETE /api/...` and `POST /api/control`) require `Authorization: Bearer <token>`. Read endpoints stay open. |
 
 ## Using It
 
@@ -96,17 +100,41 @@ The compose file stores SQLite data in the `metronome-data` volume so preset slo
 
 ## REST API
 
-| Method | Path | Description |
-| --- | --- | --- |
-| `GET` | `/healthz` | Health check (app + store). |
-| `GET` | `/api/state` | Current room state snapshot. |
-| `GET` | `/api/settings` | Settings + presets. |
-| `PUT` | `/api/settings` | Update settings (control style, theme, sound, volume, preview, background audio). |
-| `GET` | `/api/presets` | List presets. |
-| `POST` | `/api/presets` | Create a preset (`bpm`, `meter`, `name`). |
-| `PATCH` | `/api/presets/:id` | Update a preset. |
-| `DELETE` | `/api/presets/:id` | Delete a preset. |
-| `POST` | `/api/presets/reorder` | Reorder presets by id list. |
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| `GET` | `/healthz` | – | Health check (app + store). |
+| `GET` | `/api/info` | – | App version, supported sounds / meters / BPM range, endpoint map, `auth_required`. |
+| `GET` | `/api/state` | – | Current room state snapshot. |
+| `GET` | `/api/settings` | – | Settings + presets. |
+| `GET` | `/api/presets` | – | List presets. |
+| `GET` | `/api/events` | – | Server-sent events stream (`state`, `settings`, `presets` events). |
+| `POST` | `/api/control` | token | Drive playback. Payload is the same `reduceMessage` shape as the WebSocket (`{type:"set_bpm",bpm:140}`, `{type:"set_meter",beats_per_bar:6,beat_unit:8}`, `{type:"set_playing",playing:true}`, `{type:"toggle_playing"}`, `{type:"apply_preset",bpm:120,meter:"4/4"}`, `{type:"load_preset",slot:1}`, `{type:"overwrite_preset",slot:1}`). |
+| `PUT` | `/api/settings` | token | Update settings (control style, theme, sound, volume, preview, background audio). |
+| `POST` | `/api/presets` | token | Create a preset (`bpm`, `meter`, `name`). |
+| `PATCH` | `/api/presets/:id` | token | Update a preset. |
+| `DELETE` | `/api/presets/:id` | token | Delete a preset. |
+| `POST` | `/api/presets/reorder` | token | Reorder presets by id list. |
+
+`token` columns require the `Authorization: Bearer …` header **only** when `METRONOME_API_TOKEN` is set; otherwise the endpoint is open.
+
+### Examples (StreamDeck / OBS / shell)
+
+```bash
+# Start the click
+curl -X POST http://metronome.local:3000/api/control \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"set_playing","playing":true}'
+
+# Set BPM 140
+curl -X POST http://metronome.local:3000/api/control \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"set_bpm","bpm":140}'
+
+# Subscribe to state changes (OBS browser source / EventSource)
+curl -N http://metronome.local:3000/api/events
+```
 
 WebSocket messages are documented in `src/state.js` (`reduceMessage`).
 

@@ -67,17 +67,23 @@
           <h2 id="share-title">Share</h2>
           <button id="share-close" class="icon-button" type="button" aria-label="Close">✕</button>
         </header>
-        <div id="share-qr" class="share-qr" aria-label="QR code"></div>
-        <p class="share-hint">Scan with another device on the same Wi-Fi, or use Share / AirDrop below</p>
-        <code id="share-url" class="share-url"></code>
-        <div class="share-actions">
-          <button id="share-copy" class="small-button" type="button">Copy link</button>
-          <button id="share-native" class="small-button share-native" type="button" hidden>
+        <p class="share-hint">Send the link to anyone on the same Wi-Fi to join the room.</p>
+        <div class="share-quick">
+          <button id="share-native" class="primary-button share-native" type="button" hidden>
             <span aria-hidden="true">⤴</span>
             <span data-share-label>Share</span>
           </button>
+          <button id="share-copy" class="primary-button" type="button">
+            <span aria-hidden="true">📋</span>
+            <span>Copy link</span>
+          </button>
         </div>
-        <p id="share-fallback" class="share-fallback" hidden>Tip: on iPhone, tap Copy link then paste in Messages or AirDrop. On Android, paste in any chat app.</p>
+        <code id="share-url" class="share-url"></code>
+        <details id="share-qr-details" class="share-qr-details">
+          <summary>Show QR code</summary>
+          <div id="share-qr" class="share-qr" aria-label="QR code"></div>
+        </details>
+        <p id="share-fallback" class="share-fallback" hidden>Tip: Copy link, then paste into Messages, AirDrop, or any chat app.</p>
       </article>
     </dialog>
 

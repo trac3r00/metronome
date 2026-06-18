@@ -431,6 +431,7 @@ describe("static PWA surface", () => {
     assert.match(worker, /\.keys\(\)/);
     assert.match(worker, /caches\.delete/);
     assert.match(worker, /church-metronome-/);
+    assert.match(worker, /scheduler-worker\.js/);
     assert.doesNotMatch(worker, /fullscreen\.js/);
     assert.doesNotMatch(worker, /settings\.js/);
   });
