@@ -17,7 +17,7 @@ const DEFAULT_SETTINGS = Object.freeze({
 });
 const CONTROL_STYLES = new Set(["dial", "slider", "wheel", "tap"]);
 const THEMES = new Set(["auto", "light", "dark"]);
-const SOUND_IDS = new Set(["classic", "wood", "digital", "cowbell", "tick"]);
+const SOUND_IDS = new Set(["classic", "wood", "digital", "cowbell", "tick", "snare", "kick", "rim", "shaker", "hihat"]);
 const METERS = new Set(["4/4", "3/4", "6/8"]);
 const DEFAULT_SETTINGS_PRESETS = Object.freeze([60, 80, 100, 120, 140]);
 const MIN_BPM = 30;
@@ -383,7 +383,7 @@ function parseTheme(value) {
 
 function parseSoundId(value) {
   if (!SOUND_IDS.has(value)) {
-    throw new StoreValidationError("Sound must be classic, wood, digital, cowbell, or tick");
+    throw new StoreValidationError("Sound must be classic, wood, digital, cowbell, tick, snare, kick, rim, shaker, or hihat");
   }
   return value;
 }

@@ -4,6 +4,11 @@ export const SOUND_OPTIONS = Object.freeze([
   { id: "digital", name: "Digital Beep" },
   { id: "cowbell", name: "Cowbell" },
   { id: "tick", name: "Soft Tick" },
+  { id: "snare", name: "Snare" },
+  { id: "kick", name: "Kick" },
+  { id: "rim", name: "Rim Shot" },
+  { id: "shaker", name: "Shaker" },
+  { id: "hihat", name: "Hi-Hat" },
 ]);
 
 export const SOUNDS = Object.freeze({
@@ -12,18 +17,27 @@ export const SOUNDS = Object.freeze({
   digital: (context, downbeat) => createTone(context, downbeat ? 2000 : 1500, "square"),
   cowbell: (context, downbeat) => (downbeat ? createCowbell(context) : createTone(context, 540, "square")),
   tick: (context) => createNoiseTick(context),
+  snare: (context, downbeat) => createNoiseDrum(context, { highpass: downbeat ? 1500 : 1800, length: 0.04 }),
+  kick: (context, downbeat) => createKick(context, downbeat),
+  rim: (context, downbeat) => createTone(context, downbeat ? 2400 : 1900, "square"),
+  shaker: (context) => createNoiseDrum(context, { highpass: 5500, length: 0.025 }),
+  hihat: (context, downbeat) => createNoiseDrum(context, { highpass: downbeat ? 7000 : 6000, length: 0.015 }),
 });
 
 const DEFAULT_SOUND_ID = "classic";
 const DEFAULT_VOLUME = 80;
+const LOOKAHEAD_SECONDS = 0.25;
+const SCHEDULE_INTERVAL_MS = 25;
 
 export class AudioScheduler {
-  constructor(onBeat, { soundId = DEFAULT_SOUND_ID, volume = DEFAULT_VOLUME } = {}) {
+  constructor(onBeat, { soundId = DEFAULT_SOUND_ID, volume = DEFAULT_VOLUME, workerUrl = "/scheduler-worker.js" } = {}) {
     this.onBeat = onBeat;
     this.soundId = resolveSoundId(soundId);
     this.volume = resolveVolume(volume);
     this.context = null;
     this.timer = null;
+    this.worker = null;
+    this.workerUrl = workerUrl;
     this.previewTimers = [];
     this.nextNoteTime = 0;
     this.beat = 0;
@@ -42,18 +56,15 @@ export class AudioScheduler {
     await this.resume();
     this.nextNoteTime = this.context.currentTime + 0.05;
     this.beat = 0;
-    this.timer ??= setInterval(() => this.scheduleAhead(), 25);
+    this.startTicker();
   }
 
   stop() {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
+    this.stopTicker();
   }
 
   get isRunning() {
-    return Boolean(this.timer);
+    return this.timer !== null || this.worker !== null;
   }
 
   async suspend() {
@@ -97,7 +108,7 @@ export class AudioScheduler {
     if (!this.context || !this.state) {
       return;
     }
-    while (this.nextNoteTime < this.context.currentTime + 0.12) {
+    while (this.nextNoteTime < this.context.currentTime + LOOKAHEAD_SECONDS) {
       this.scheduleClick(this.nextNoteTime, this.beat === 0);
       this.onBeat(this.beat, Math.max(0, this.nextNoteTime - this.context.currentTime));
       this.beat = (this.beat + 1) % this.state.beats_per_bar;
@@ -117,6 +128,43 @@ export class AudioScheduler {
     gain.connect(this.context.destination);
     source.start(time);
     source.stop(time + decay + 0.005);
+  }
+
+  startTicker() {
+    if (this.worker || this.timer) {
+      return;
+    }
+    if (typeof Worker !== "undefined" && this.workerUrl) {
+      try {
+        this.worker = new Worker(this.workerUrl);
+        this.worker.addEventListener("message", (event) => {
+          if (event.data?.type === "tick") {
+            this.scheduleAhead();
+          }
+        });
+        this.worker.postMessage({ type: "start", interval: SCHEDULE_INTERVAL_MS });
+        return;
+      } catch {
+        this.worker = null;
+      }
+    }
+    this.timer = setInterval(() => this.scheduleAhead(), SCHEDULE_INTERVAL_MS);
+  }
+
+  stopTicker() {
+    if (this.worker) {
+      try {
+        this.worker.postMessage({ type: "stop" });
+        this.worker.terminate();
+      } catch {
+        // ignore
+      }
+      this.worker = null;
+    }
+    if (this.timer !== null) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
   }
 
   clearPreviewTimers() {
@@ -152,20 +200,31 @@ function createCowbell(context) {
 }
 
 function createNoiseTick(context) {
-  const length = Math.ceil(context.sampleRate * 0.008);
-  const buffer = context.createBuffer(1, length, context.sampleRate);
+  return createNoiseDrum(context, { highpass: 4000, length: 0.008 });
+}
+
+function createNoiseDrum(context, { highpass = 4000, length = 0.02 } = {}) {
+  const sampleLength = Math.max(1, Math.ceil(context.sampleRate * length));
+  const buffer = context.createBuffer(1, sampleLength, context.sampleRate);
   const samples = buffer.getChannelData(0);
-  for (let index = 0; index < length; index += 1) {
+  for (let index = 0; index < sampleLength; index += 1) {
     samples[index] = Math.random() * 2 - 1;
   }
   const source = context.createBufferSource();
   const filter = context.createBiquadFilter();
   filter.type = "highpass";
-  filter.frequency.value = 4000;
+  filter.frequency.value = highpass;
   source.buffer = buffer;
   source.connect(filter);
   source.output = filter;
   return source;
+}
+
+function createKick(context, downbeat) {
+  const oscillator = createTone(context, downbeat ? 80 : 65, "sine");
+  // Slight downward pitch envelope using ramped frequency would need an extra
+  // helper; the static low tone is sufficient for the metronome cue.
+  return oscillator;
 }
 
 function connectSource(source, destination) {
@@ -177,11 +236,17 @@ function connectSource(source, destination) {
 }
 
 function getDecaySeconds(soundId, downbeat) {
-  if (soundId === "tick") {
+  if (soundId === "tick" || soundId === "shaker" || soundId === "hihat") {
     return downbeat ? 0.035 : 0.025;
   }
-  if (soundId === "wood") {
+  if (soundId === "wood" || soundId === "rim") {
     return downbeat ? 0.075 : 0.055;
+  }
+  if (soundId === "kick") {
+    return downbeat ? 0.12 : 0.09;
+  }
+  if (soundId === "snare") {
+    return downbeat ? 0.08 : 0.06;
   }
   return downbeat ? 0.06 : 0.05;
 }
