@@ -4,14 +4,22 @@ import { describe, it } from "node:test";
 import { AudioScheduler, SOUND_OPTIONS, SOUNDS } from "../public/audio.js";
 
 describe("audio scheduler sounds", () => {
-  it("exposes the ten selectable metronome sound presets", () => {
+  it("exposes the band-grade metronome sound presets", () => {
     assert.deepEqual(
       SOUND_OPTIONS.map((sound) => sound.id),
-      ["classic", "wood", "digital", "cowbell", "tick", "snare", "kick", "rim", "shaker", "hihat"],
+      ["classic", "studio", "trainer", "wood", "stick", "rim", "cowbell", "bell", "agogo", "logic", "tick", "shaker", "hihat", "digital"],
     );
   });
 
-  it("switches oscillator output when the sound changes", () => {
+  it("every sound preset has a builder + descriptive copy", () => {
+    for (const sound of SOUND_OPTIONS) {
+      assert.ok(SOUNDS[sound.id], `missing builder for ${sound.id}`);
+      assert.ok(sound.name && sound.name.length > 0, `missing name for ${sound.id}`);
+      assert.ok(sound.desc && sound.desc.length > 0, `missing desc for ${sound.id}`);
+    }
+  });
+
+  it("schedules an oscillator for the classic click on the destination", () => {
     const context = new FakeAudioContext();
     const scheduler = new AudioScheduler(() => {}, { soundId: "classic", volume: 80 });
     scheduler.context = context;
@@ -20,10 +28,10 @@ describe("audio scheduler sounds", () => {
     scheduler.setSound("digital");
     scheduler.scheduleClick(2, true);
 
-    assert.equal(context.oscillators[0].frequency.value, 1568);
+    assert.equal(context.oscillators.length >= 2, true);
+    // First click is classic (sine); second is digital (square).
     assert.equal(context.oscillators[0].type, "sine");
-    assert.equal(context.oscillators[1].frequency.value, 2000);
-    assert.equal(context.oscillators[1].type, "square");
+    assert.equal(context.oscillators[context.oscillators.length - 1].type, "square");
   });
 
   it("reports whether the scheduler loop is running", async () => {
@@ -38,12 +46,20 @@ describe("audio scheduler sounds", () => {
     delete globalThis.window;
   });
 
+  it("setSound updates the active sound id immediately (no allocations)", () => {
+    const scheduler = new AudioScheduler(() => {}, { soundId: "classic", volume: 80 });
+    assert.equal(scheduler.soundId, "classic");
+    scheduler.setSound("studio");
+    assert.equal(scheduler.soundId, "studio");
+    scheduler.setSound("not-a-real-sound");
+    // Falls back to classic when given an unknown id.
+    assert.equal(scheduler.soundId, "classic");
+  });
+
   it("creates noise-buffer output for soft tick", () => {
     const context = new FakeAudioContext();
-    const node = SOUNDS.tick(context, false);
-
-    assert.equal(node.kind, "buffer");
-    assert.equal(context.buffers[0].length, Math.ceil(context.sampleRate * 0.008));
+    SOUNDS.tick.schedule(context, 0, false, context.createGain());
+    assert.equal(context.buffers.length, 1);
     assert.equal(context.filters[0].type, "highpass");
     assert.equal(context.filters[0].frequency.value, 4000);
   });
@@ -64,7 +80,11 @@ class FakeAudioContext {
 
   createOscillator() {
     const oscillator = new FakeNode("oscillator");
-    oscillator.frequency = { value: 0 };
+    oscillator.frequency = {
+      value: 0,
+      setValueAtTime(value) { this.value = value; },
+      exponentialRampToValueAtTime(value) { this.value = value; },
+    };
     oscillator.type = "sine";
     this.oscillators.push(oscillator);
     return oscillator;
@@ -74,15 +94,9 @@ class FakeAudioContext {
     const gain = new FakeNode("gain");
     gain.gain = {
       value: 1,
-      setValueAtTime(value) {
-        this.value = value;
-      },
-      exponentialRampToValueAtTime(value) {
-        this.value = value;
-      },
-      linearRampToValueAtTime(value) {
-        this.value = value;
-      },
+      setValueAtTime(value) { this.value = value; },
+      exponentialRampToValueAtTime(value) { this.value = value; },
+      linearRampToValueAtTime(value) { this.value = value; },
     };
     this.gains.push(gain);
     return gain;
@@ -94,9 +108,7 @@ class FakeAudioContext {
       length,
       sampleRate,
       data: Array.from({ length: channels }, () => new Float32Array(length)),
-      getChannelData(index) {
-        return this.data[index];
-      },
+      getChannelData(index) { return this.data[index]; },
     };
     this.buffers.push(buffer);
     return buffer;
@@ -112,6 +124,7 @@ class FakeAudioContext {
     const filter = new FakeNode("filter");
     filter.type = "lowpass";
     filter.frequency = { value: 0 };
+    filter.Q = { value: 0 };
     this.filters.push(filter);
     return filter;
   }
@@ -130,11 +143,6 @@ class FakeNode {
     return node;
   }
 
-  start(time) {
-    this.startedAt = time;
-  }
-
-  stop(time) {
-    this.stoppedAt = time;
-  }
+  start(time) { this.startedAt = time; }
+  stop(time) { this.stoppedAt = time; }
 }

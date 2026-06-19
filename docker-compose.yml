@@ -1,3 +1,5 @@
+name: metronome
+
 services:
   metronome:
     build: .
@@ -6,9 +8,14 @@ services:
     environment:
       PORT: "3000"
       METRONOME_DB_PATH: /app/data/metronome.sqlite
+      METRONOME_API_TOKEN: "${METRONOME_API_TOKEN:-}"
     volumes:
       - metronome-data:/app/data
     restart: unless-stopped
 
 volumes:
   metronome-data:
+    # Persist user settings and presets across image rebuilds.
+    # Pinning the volume name decouples it from the compose project name
+    # so renaming the repo or directory does not strand the old volume.
+    name: metronome-data

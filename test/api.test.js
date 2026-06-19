@@ -22,9 +22,10 @@ describe("HTTP control API + SSE + info", () => {
     assert.match(info.version, /^\d+\.\d+\.\d+$/);
     assert.deepEqual(info.meters, ["4/4", "3/4", "6/8"]);
     assert.deepEqual(info.bpm_range, [30, 300]);
-    assert.equal(info.sounds.length, 10);
-    assert.ok(info.sounds.includes("snare"));
-    assert.ok(info.sounds.includes("kick"));
+    assert.equal(info.sounds.length, 14);
+    assert.ok(info.sounds.includes("studio"));
+    assert.ok(info.sounds.includes("bell"));
+    assert.ok(info.sounds.includes("agogo"));
     assert.equal(info.auth_required, false);
     assert.equal(info.endpoints.control, "POST /api/control");
     assert.equal(info.endpoints.events_sse, "GET /api/events");
@@ -90,16 +91,16 @@ describe("HTTP control API + SSE + info", () => {
     assert.equal(state.bpm, 100);
   });
 
-  it("accepts the snare and kick sound ids through /api/settings", async () => {
+  it("accepts the studio and bell sound ids through /api/settings", async () => {
     const { baseUrl } = await startTestServer();
     const response = await fetch(`${baseUrl}/api/settings`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sound_id: "snare" }),
+      body: JSON.stringify({ sound_id: "studio" }),
     });
     assert.equal(response.status, 200);
     const settings = await response.json();
-    assert.equal(settings.sound_id, "snare");
+    assert.equal(settings.sound_id, "studio");
   });
 
   it("streams an initial state event over /api/events", async () => {

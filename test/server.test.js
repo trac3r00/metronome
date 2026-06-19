@@ -234,7 +234,7 @@ describe("server settings and preset sync", () => {
       body: JSON.stringify({
         control_style: "wheel",
         theme: "dark",
-        sound_id: "wood",
+        sound_id: "studio",
         volume: 35,
         fullscreen_only: true,
         preview_sound_on_change: false,
@@ -246,7 +246,7 @@ describe("server settings and preset sync", () => {
     // Then: the response and websocket broadcast expose the persisted settings.
     assert.equal(response.control_style, "wheel");
     assert.equal(response.theme, "dark");
-    assert.equal(response.sound_id, "wood");
+    assert.equal(response.sound_id, "studio");
     assert.equal(response.volume, 35);
     assert.equal(response.preview_sound_on_change, false);
     assert.equal(response.background_audio, false);
@@ -256,8 +256,8 @@ describe("server settings and preset sync", () => {
     client.close();
   });
 
-  it("migrates existing dial settings to slider once", async () => {
-    // Given: an existing install with a pre-v2 dial preference.
+  it("migrates legacy snare/kick sound ids to the new band-quality bank", async () => {
+    // Given: a database created with a v1.5 schema where snare was a valid id.
     const dir = await mkdtemp(path.join(tmpdir(), "metronome-db-"));
     tempDirs.push(dir);
     const dbPath = path.join(dir, "state.sqlite");
@@ -267,27 +267,54 @@ describe("server settings and preset sync", () => {
         id INTEGER PRIMARY KEY CHECK (id = 1),
         control_style TEXT NOT NULL DEFAULT 'slider',
         theme TEXT NOT NULL DEFAULT 'auto',
-        fullscreen_only INTEGER NOT NULL DEFAULT 0,
+        sound_id TEXT NOT NULL DEFAULT 'classic',
+        volume INTEGER NOT NULL DEFAULT 80,
+        preview_sound_on_change INTEGER NOT NULL DEFAULT 1,
+        background_audio INTEGER NOT NULL DEFAULT 1,
         updated_at INTEGER NOT NULL
       );
-      INSERT INTO settings (id, control_style, theme, fullscreen_only, updated_at)
-      VALUES (1, 'dial', 'auto', 0, 123);
+      INSERT INTO settings (id, control_style, theme, sound_id, volume, preview_sound_on_change, background_audio, updated_at)
+      VALUES (1, 'slider', 'auto', 'snare', 80, 1, 1, 123);
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO meta (key, value) VALUES ('schema_version', '2');
     `);
     db.close();
 
-    // When: the store boots twice against the same database.
-    const first = new StateStore(dbPath);
-    const firstSettings = first.getSettings();
-    first.close();
-    const second = new StateStore(dbPath);
-    const secondSettings = second.getSettings();
-    const version = second.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
+    const store = new StateStore(dbPath);
+    const settings = store.getSettings();
+    store.close();
 
-    // Then: the one-shot migration changes dial to slider and records v2 idempotently.
-    assert.equal(firstSettings.control_style, "slider");
-    assert.equal(secondSettings.control_style, "slider");
-    assert.equal(version.value, "2");
-    second.close();
+    // snare → studio (closest band-quality equivalent)
+    assert.equal(settings.sound_id, "studio");
+  });
+
+  it("preserves user settings across server restarts (deploy survives DB)", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "metronome-deploy-"));
+    tempDirs.push(dir);
+    const dbPath = path.join(dir, "state.sqlite");
+
+    // Boot 1: change settings + add a preset.
+    const first = await startTestServer(dbPath);
+    await fetchJson(`${first.baseUrl}/api/settings`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sound_id: "studio", volume: 42, theme: "dark" }),
+    });
+    await fetchJson(`${first.baseUrl}/api/presets`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ bpm: 95, meter: "3/4", name: "Bridge" }),
+    });
+    await first.close();
+    servers.splice(servers.indexOf(first), 1);
+
+    // Boot 2: same DB path (simulates rebuilt image, same volume).
+    const second = await startTestServer(dbPath);
+    const settings = await fetchJson(`${second.baseUrl}/api/settings`);
+    assert.equal(settings.sound_id, "studio");
+    assert.equal(settings.volume, 42);
+    assert.equal(settings.theme, "dark");
+    assert.ok(settings.presets.some((preset) => preset.name === "Bridge" && preset.bpm === 95));
   });
 
   it("creates, lists, updates, reorders, and deletes presets", async () => {
@@ -419,7 +446,9 @@ describe("static PWA surface", () => {
     assert.match(appScript, /tempo-control/);
     assert.match(appScript, /background_audio/);
     assert.match(appScript, /preview_sound_on_change/);
+    assert.match(appScript, /togglePerformMode/);
     assert.doesNotMatch(appScript, /bindFullscreenToggle|fullscreen_only/);
+    assert.doesNotMatch(appScript, /Fullscreen/);
     assert.match(qrScript, /qrcode.min.js/);
     assert.match(qrScript, /AirDrop/);
     assert.match(tempoScript, /renderTempoControl/);
@@ -430,10 +459,11 @@ describe("static PWA surface", () => {
     assert.match(worker, /install/);
     assert.match(worker, /\.keys\(\)/);
     assert.match(worker, /caches\.delete/);
-    assert.match(worker, /church-metronome-/);
+    assert.match(worker, /church-metronome-v6/);
     assert.match(worker, /scheduler-worker\.js/);
     assert.doesNotMatch(worker, /fullscreen\.js/);
     assert.doesNotMatch(worker, /settings\.js/);
+    assert.doesNotMatch(worker, /Fullscreen/);
   });
 
   it("has no Korean user-facing strings in public HTML or JavaScript", async () => {

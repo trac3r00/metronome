@@ -1,47 +1,51 @@
 :root {
   color-scheme: light;
-  --color-primary: #0D9488;
+  --color-primary: #0EA5E9;
   --color-on-primary: #FFFFFF;
-  --color-secondary: #14B8A6;
-  --color-accent: #EA580C;
-  --color-background: #F0FDFA;
-  --color-foreground: #134E4A;
-  --color-muted: #E8F1F4;
-  --color-border: #99F6E4;
+  --color-secondary: #6366F1;
+  --color-accent: #F59E0B;
+  --color-background: #F8FAFC;
+  --color-foreground: #0F172A;
+  --color-muted: #E2E8F0;
+  --color-border: #CBD5E1;
   --color-destructive: #DC2626;
-  --color-ring: #0D9488;
+  --color-ring: #0EA5E9;
   --surface: #FFFFFF;
-  --surface-raised: #FAFFFF;
-  --text-muted: #4B635F;
-  --shadow: 0 1rem 2.5rem rgba(13, 148, 136, 0.14);
-  --font-display: "Righteous", cursive;
-  --font-body: "Poppins", sans-serif;
+  --surface-raised: #FFFFFF;
+  --color-text: #0F172A;
+  --text-muted: #475569;
+  --shadow: 0 0.25rem 1rem rgba(15, 23, 42, 0.06);
+  --font-display: "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --color-background: #07090D;
-    --color-foreground: #F7F8FB;
-    --color-muted: #10201F;
-    --color-border: #225E59;
-    --surface: #101918;
-    --surface-raised: #142220;
-    --text-muted: #B6C9C6;
-    --shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.34);
+    --color-background: #0B1220;
+    --color-foreground: #F8FAFC;
+    --color-muted: #1E293B;
+    --color-border: #334155;
+    --surface: #111827;
+    --surface-raised: #1F2937;
+    --color-text: #F8FAFC;
+    --text-muted: #94A3B8;
+    --shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.5);
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --color-background: #07090D;
-  --color-foreground: #F7F8FB;
-  --color-muted: #10201F;
-  --color-border: #225E59;
-  --surface: #101918;
-  --surface-raised: #142220;
-  --text-muted: #B6C9C6;
-  --shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.34);
+  --color-background: #0B1220;
+  --color-foreground: #F8FAFC;
+  --color-muted: #1E293B;
+  --color-border: #334155;
+  --surface: #111827;
+  --surface-raised: #1F2937;
+  --color-text: #F8FAFC;
+  --text-muted: #94A3B8;
+  --shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.5);
 }
 
 * {
@@ -1289,4 +1293,109 @@ input[type="checkbox"] {
   .primary-button:hover {
     box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--color-primary) 20%, transparent);
   }
+}
+
+/* --- v1.6: Performance mode + modern icon button polish --- */
+
+.icon-button.active {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+}
+
+.tempo-readout-unit {
+  font-size: 0.5em;
+  letter-spacing: 0.18em;
+  margin-left: 0.4rem;
+  opacity: 0.55;
+  font-weight: 500;
+}
+
+/* Performance mode: stripped to giant BPM + START + presets. */
+body[data-mode="perform"] .topbar-actions .icon-button:not(#toggle-perform),
+body[data-mode="perform"] #tempo-control,
+body[data-mode="perform"] .meter-tap-row,
+body[data-mode="perform"] .shortcut-help,
+body[data-mode="perform"] .preset-edit,
+body[data-mode="perform"] .bpm-row .step-button {
+  display: none !important;
+}
+
+body[data-mode="perform"] .stage {
+  padding: 0;
+}
+
+body[data-mode="perform"] .stage-grid {
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  padding: 0.75rem;
+  max-width: 100%;
+}
+
+body[data-mode="perform"] .tempo-readout #bpm-display {
+  font-size: clamp(8rem, 28vw, 22rem);
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+body[data-mode="perform"] .tempo-readout-unit {
+  font-size: 1.5rem;
+  display: block;
+  margin: 0;
+  letter-spacing: 0.4em;
+}
+
+body[data-mode="perform"] .beat-indicator {
+  margin-bottom: 0.5rem;
+}
+
+body[data-mode="perform"] .beat-indicator .beat-dot {
+  width: clamp(1.25rem, 3vw, 1.75rem);
+  height: clamp(1.25rem, 3vw, 1.75rem);
+  font-size: 0;
+}
+
+body[data-mode="perform"] .play-button {
+  font-size: clamp(2.5rem, 8vw, 5rem);
+  padding: clamp(1.5rem, 4vw, 3rem);
+  border-radius: 1.5rem;
+  width: 100%;
+  letter-spacing: 0.2em;
+  font-weight: 800;
+}
+
+body[data-mode="perform"] .preset-strip {
+  background: transparent;
+  padding: 0;
+  border: 0;
+}
+
+body[data-mode="perform"] .preset-track {
+  gap: 0.75rem;
+}
+
+body[data-mode="perform"] .preset-chip {
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+  padding: 1rem 1.5rem;
+  flex: 1 1 8rem;
+  min-height: clamp(4rem, 9vw, 5.5rem);
+  border-radius: 1.25rem;
+  font-weight: 700;
+}
+
+body[data-mode="perform"] .preset-chip strong {
+  font-size: 1.4em;
+}
+
+body[data-mode="perform"] .live-controls {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  gap: 1rem;
+}
+
+body[data-mode="perform"] .message {
+  text-align: center;
+  font-size: 1rem;
 }

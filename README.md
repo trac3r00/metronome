@@ -9,17 +9,20 @@ Originally built for church broadcast teams, it works just as well for any room 
 - 🎚️ **Live BPM stage** with beat pulse visualization, choice of dial / slider / wheel / tap controls.
 - 🥁 **Meter switching** between `4/4`, `3/4`, and `6/8`.
 - 👆 **Tap Tempo** estimates BPM from your taps.
-- 🔊 **Ten click sounds** (classic, wood, digital, cowbell, soft tick, snare, kick, rim, shaker, hi-hat) with a volume slider and per-sound preview.
+- 🔊 **14 band-grade click sounds** including studio click, pulse trainer, wood block, stick, rim shot, sidestick, cowbell, agogô, tuned bell, classic sine, soft tick, shaker, closed hi-hat, digital beep. Each is synthesized with transient + body envelopes so they sound like real metronome cues — not bare oscillators.
 - 🗂️ **Preset library** with add / edit / drag-reorder / delete — tap a preset chip on the stage to apply.
 - 📤 **Share modal**: quick-share buttons (native Share / AirDrop + Copy link) first, QR code on demand.
-- ⚙️ **Settings in an in-page modal** — the metronome **keeps playing** while you change anything.
+- ⚙️ **Settings in an in-page modal** — the metronome **keeps playing** while you change anything, and sound changes apply instantly (no server-round-trip delay).
+- 🎤 **Performance mode** — minimal one-tap UI for live use: giant BPM, giant START/STOP, oversized preset chips. Toggle with the icon in the top bar or press `P`.
 - 🔇 **Preview-on-change toggle** (default on): turn off the sample click when switching sounds or moving the volume.
 - 📱 **Background playback toggle** (default on): the click keeps going when the tab is hidden or the browser is minimized.
 - ⏱️ **Web Worker scheduler** keeps timing tight even when the host tab is throttled — no more drifting clicks.
+- 📺 **vMix / OBS friendly**: works inside Chromium Embedded Framework browser sources. Network-first service worker means a redeploy can't leave ghost UI behind in a long-running broadcast machine.
 - 🔌 **HTTP control API + SSE event stream** for StreamDeck, OBS browser sources, shell scripts, etc.
 - 🔐 Optional `METRONOME_API_TOKEN` Bearer auth for the control endpoints.
 - 🌐 **WebSocket sync** with exponential-backoff reconnect, and an offline fallback served from the service worker cache.
 - 🛡️ **Hardened server**: validation, payload caps, burst rate limiting, SQLite persistence, `/healthz` for orchestrators.
+- 💾 **Settings survive redeploys**: SQLite lives in a named Docker volume (`metronome-data`). `docker compose pull && up -d` does not wipe your presets, sound choices, theme, or BPM.
 
 ## Quick Start
 

@@ -9,7 +9,6 @@ import { DEFAULT_STATE, makeEmptyPresets, normalizeState } from "./state.js";
 const DEFAULT_SETTINGS = Object.freeze({
   control_style: "slider",
   theme: "auto",
-  fullscreen_only: false,
   sound_id: "classic",
   volume: 80,
   preview_sound_on_change: true,
@@ -17,12 +16,16 @@ const DEFAULT_SETTINGS = Object.freeze({
 });
 const CONTROL_STYLES = new Set(["dial", "slider", "wheel", "tap"]);
 const THEMES = new Set(["auto", "light", "dark"]);
-const SOUND_IDS = new Set(["classic", "wood", "digital", "cowbell", "tick", "snare", "kick", "rim", "shaker", "hihat"]);
+const SOUND_IDS = new Set([
+  "classic", "wood", "digital", "cowbell", "tick",
+  "rim", "shaker", "hihat",
+  "studio", "trainer", "stick", "bell", "logic", "agogo",
+]);
 const METERS = new Set(["4/4", "3/4", "6/8"]);
 const DEFAULT_SETTINGS_PRESETS = Object.freeze([60, 80, 100, 120, 140]);
 const MIN_BPM = 30;
 const MAX_BPM = 300;
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 export class StateStore {
   constructor(dbPath) {
@@ -48,7 +51,6 @@ export class StateStore {
         id INTEGER PRIMARY KEY CHECK (id = 1),
         control_style TEXT NOT NULL DEFAULT 'slider',
         theme TEXT NOT NULL DEFAULT 'auto',
-        fullscreen_only INTEGER NOT NULL DEFAULT 0,
         sound_id TEXT NOT NULL DEFAULT 'classic',
         volume INTEGER NOT NULL DEFAULT 80,
         preview_sound_on_change INTEGER NOT NULL DEFAULT 1,
@@ -77,12 +79,11 @@ export class StateStore {
     this.ensureSettingsColumns();
     this.db
       .prepare(
-        "INSERT OR IGNORE INTO settings (id, control_style, theme, fullscreen_only, sound_id, volume, preview_sound_on_change, background_audio, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO settings (id, control_style, theme, sound_id, volume, preview_sound_on_change, background_audio, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         DEFAULT_SETTINGS.control_style,
         DEFAULT_SETTINGS.theme,
-        DEFAULT_SETTINGS.fullscreen_only ? 1 : 0,
         DEFAULT_SETTINGS.sound_id,
         DEFAULT_SETTINGS.volume,
         DEFAULT_SETTINGS.preview_sound_on_change ? 1 : 0,
@@ -124,7 +125,6 @@ export class StateStore {
 
   ensureSettingsColumns() {
     const columns = this.db.prepare("PRAGMA table_info(settings)").all().map((column) => column.name);
-    this.addSettingsColumnIfMissing(columns, "fullscreen_only", "fullscreen_only INTEGER NOT NULL DEFAULT 0");
     this.addSettingsColumnIfMissing(columns, "sound_id", "sound_id TEXT NOT NULL DEFAULT 'classic'");
     this.addSettingsColumnIfMissing(columns, "volume", "volume INTEGER NOT NULL DEFAULT 80");
     this.addSettingsColumnIfMissing(columns, "preview_sound_on_change", "preview_sound_on_change INTEGER NOT NULL DEFAULT 1");
@@ -151,6 +151,16 @@ export class StateStore {
       const settings = this.db.prepare("SELECT control_style FROM settings WHERE id = 1").get();
       if (settings?.control_style === "dial") {
         this.db.prepare("UPDATE settings SET control_style = ?, updated_at = ? WHERE id = 1").run("slider", Date.now());
+      }
+    }
+    if (version < 3) {
+      // v3: migrate legacy sound ids (snare / kick) to their nearest current
+      // equivalents in the new band-quality sound bank.
+      const stored = this.db.prepare("SELECT sound_id FROM settings WHERE id = 1").get();
+      const legacyMap = { snare: "studio", kick: "logic" };
+      const replacement = legacyMap[stored?.sound_id];
+      if (replacement) {
+        this.db.prepare("UPDATE settings SET sound_id = ?, updated_at = ? WHERE id = 1").run(replacement, Date.now());
       }
     }
     if (version < SCHEMA_VERSION) {
@@ -383,7 +393,7 @@ function parseTheme(value) {
 
 function parseSoundId(value) {
   if (!SOUND_IDS.has(value)) {
-    throw new StoreValidationError("Sound must be classic, wood, digital, cowbell, tick, snare, kick, rim, shaker, or hihat");
+    throw new StoreValidationError(`Sound must be one of ${[...SOUND_IDS].join(", ")}`);
   }
   return value;
 }

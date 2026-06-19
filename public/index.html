@@ -3,17 +3,17 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#0D9488">
+    <meta name="theme-color" content="#0EA5E9">
     <title>Metronome</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Righteous&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/styles.css">
     <script type="module" src="/app.js"></script>
   </head>
-  <body class="stage-page">
+  <body class="stage-page" data-mode="standard">
     <main class="app-shell app-shell--stage">
       <section class="stage" aria-label="Live metronome stage">
         <header class="topbar">
@@ -22,8 +22,24 @@
             <span data-status-text>Connecting</span>
           </div>
           <div class="topbar-actions">
-            <button id="share" class="icon-button" type="button" aria-label="Share">⤴</button>
-            <button id="open-settings" class="icon-button" type="button" aria-label="Open settings">⚙</button>
+            <button id="toggle-perform" class="icon-button" type="button" aria-label="Performance mode" title="Performance mode">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 12h4l3-9 4 18 3-9h4"/>
+              </svg>
+            </button>
+            <button id="share" class="icon-button" type="button" aria-label="Share">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+                <polyline points="16 6 12 2 8 6"/>
+                <line x1="12" y1="2" x2="12" y2="15"/>
+              </svg>
+            </button>
+            <button id="open-settings" class="icon-button" type="button" aria-label="Open settings">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.13-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.66 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.66 8.87a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/>
+              </svg>
+            </button>
           </div>
         </header>
 
@@ -34,7 +50,7 @@
               <button id="bpm-minus" class="step-button" type="button" aria-label="Decrease BPM" data-stage-control>−</button>
               <div class="tempo-readout" aria-live="polite">
                 <span id="bpm-display">120</span>
-                <span>BPM</span>
+                <span class="tempo-readout-unit">BPM</span>
               </div>
               <button id="bpm-plus" class="step-button" type="button" aria-label="Increase BPM" data-stage-control>+</button>
             </div>
@@ -48,15 +64,23 @@
             </div>
             <div class="preset-strip" aria-label="Presets">
               <div id="preset-track" class="preset-track"></div>
-              <button id="edit-presets" class="preset-edit" type="button" data-stage-control>+ Edit</button>
+              <button id="edit-presets" class="preset-edit" type="button" data-stage-control aria-label="Edit presets">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <line x1="12" y1="5" x2="12" y2="19"/>
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>Edit</span>
+              </button>
             </div>
             <p id="message" class="message" role="status" aria-live="polite"></p>
-            <button id="play" class="play-button" type="button" aria-label="Start metronome" data-stage-control>START</button>
+            <button id="play" class="play-button" type="button" aria-label="Start metronome" data-stage-control>
+              <span data-play-label>START</span>
+            </button>
           </section>
         </div>
 
         <footer class="shortcut-help">
-          Space=Start/Stop · ↑↓=BPM ±1 · Shift+↑↓=±5 · T=Tap · 1/2/3=meter switch
+          Space=Start/Stop · ↑↓=BPM ±1 · Shift+↑↓=±5 · T=Tap · 1/2/3=meter · P=performance
         </footer>
       </section>
     </main>
@@ -70,11 +94,18 @@
         <p class="share-hint">Send the link to anyone on the same Wi-Fi to join the room.</p>
         <div class="share-quick">
           <button id="share-native" class="primary-button share-native" type="button" hidden>
-            <span aria-hidden="true">⤴</span>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+              <polyline points="16 6 12 2 8 6"/>
+              <line x1="12" y1="2" x2="12" y2="15"/>
+            </svg>
             <span data-share-label>Share</span>
           </button>
           <button id="share-copy" class="primary-button" type="button">
-            <span aria-hidden="true">📋</span>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="9" y="9" width="13" height="13" rx="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
             <span>Copy link</span>
           </button>
         </div>
@@ -97,7 +128,13 @@
           <section class="settings-section" aria-labelledby="presets-heading">
             <div class="section-heading">
               <h3 id="presets-heading">Presets</h3>
-              <button id="add-preset" class="small-button" type="button">+ Add preset</button>
+              <button id="add-preset" class="small-button" type="button">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <line x1="12" y1="5" x2="12" y2="19"/>
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>Add preset</span>
+              </button>
             </div>
             <div id="preset-list" class="preset-list"></div>
           </section>
@@ -173,12 +210,7 @@
       <form method="dialog" id="preset-form">
         <header>
           <h2 id="preset-modal-title">Add Preset</h2>
-          <button class="icon-button" value="cancel" type="submit" aria-label="Close">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M18 6 6 18"></path>
-              <path d="m6 6 12 12"></path>
-            </svg>
-          </button>
+          <button class="icon-button" value="cancel" type="submit" aria-label="Close">✕</button>
         </header>
         <input id="preset-id" type="hidden">
         <label>
