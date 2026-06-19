@@ -32,6 +32,7 @@ const elements = {
   statusText: document.querySelector("[data-status-text]"),
   share: document.querySelector("#share"),
   openSettings: document.querySelector("#open-settings"),
+  togglePerform: document.querySelector("#toggle-perform"),
   beatIndicator: document.querySelector("#beat-indicator"),
   bpmDisplay: document.querySelector("#bpm-display"),
   bpmMinus: document.querySelector("#bpm-minus"),
@@ -41,6 +42,7 @@ const elements = {
   presetTrack: document.querySelector("#preset-track"),
   editPresets: document.querySelector("#edit-presets"),
   play: document.querySelector("#play"),
+  playLabel: document.querySelector("#play [data-play-label]"),
   message: document.querySelector("#message"),
   tempoControl: document.querySelector("#tempo-control"),
   shareModal: document.querySelector("#share-modal"),
@@ -142,9 +144,43 @@ function bindControls() {
     event.preventDefault();
     openSettings();
   });
+  elements.togglePerform.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    togglePerformMode();
+  });
   document.addEventListener("visibilitychange", handleVisibilityChange);
   document.addEventListener("keydown", handleKeyboard);
   renderMeterButtons();
+  restorePerformMode();
+}
+
+function togglePerformMode() {
+  const next = document.body.dataset.mode === "perform" ? "standard" : "perform";
+  document.body.dataset.mode = next;
+  elements.togglePerform.classList.toggle("active", next === "perform");
+  elements.togglePerform.setAttribute(
+    "aria-label",
+    next === "perform" ? "Exit performance mode" : "Performance mode",
+  );
+  try {
+    localStorage.setItem("metronome.mode", next);
+  } catch {
+    // Storage unavailable (private mode, etc.) — non-fatal.
+  }
+}
+
+function restorePerformMode() {
+  let saved = null;
+  try {
+    saved = localStorage.getItem("metronome.mode");
+  } catch {
+    saved = null;
+  }
+  if (saved === "perform") {
+    document.body.dataset.mode = "perform";
+    elements.togglePerform.classList.add("active");
+    elements.togglePerform.setAttribute("aria-label", "Exit performance mode");
+  }
 }
 
 function bindSettingsModal() {
@@ -348,7 +384,11 @@ function applyState(nextState) {
   state = nextState;
   const meter = currentMeter();
   elements.bpmDisplay.textContent = String(state.bpm);
-  elements.play.textContent = state.playing ? "STOP" : "START";
+  if (elements.playLabel) {
+    elements.playLabel.textContent = state.playing ? "STOP" : "START";
+  } else {
+    elements.play.textContent = state.playing ? "STOP" : "START";
+  }
   elements.play.classList.toggle("stopping", state.playing);
   elements.play.setAttribute("aria-label", state.playing ? "Stop metronome" : "Start metronome");
   elements.bpmMinus.disabled = state.bpm <= 30;
@@ -464,10 +504,11 @@ function renderSoundOptionCards() {
     card.tabIndex = 0;
     card.setAttribute("role", "radio");
     card.setAttribute("aria-checked", String(settings.sound_id === sound.id));
+    const description = sound.desc ? `<small>${escapeText(sound.desc)}</small>` : `<span>${sound.id}</span>`;
     card.innerHTML = `
       <span class="sound-mark ${sound.id}" aria-hidden="true"></span>
       <strong>${sound.name}</strong>
-      <span>${sound.id}</span>
+      ${description}
     `;
     const playButton = document.createElement("button");
     playButton.className = "small-button ghost";
@@ -478,21 +519,31 @@ function renderSoundOptionCards() {
       previewSound(sound.id, { force: true });
     });
     card.append(playButton);
-    card.addEventListener("click", () => {
-      const changed = settings.sound_id !== sound.id;
-      saveSettings({ sound_id: sound.id });
-      if (changed && settings.preview_sound_on_change !== false) {
+    const selectSound = () => {
+      if (settings.sound_id === sound.id) {
+        return;
+      }
+      // Apply locally INSTANTLY — the next scheduled click uses the new sound
+      // within ~25 ms, well before the server round-trip resolves.
+      settings = { ...settings, sound_id: sound.id };
+      scheduler.setSound(sound.id);
+      // Update UI immediately so the radio state reflects the click.
+      for (const sibling of elements.soundOptions.querySelectorAll(".sound-card")) {
+        sibling.setAttribute("aria-checked", "false");
+      }
+      card.setAttribute("aria-checked", "true");
+      if (settings.preview_sound_on_change !== false) {
         previewSound(sound.id);
       }
-    });
+      // Persist asynchronously — the server will broadcast a settings:update
+      // that we treat as confirmation rather than a fresh source of truth.
+      saveSettings({ sound_id: sound.id }).catch(() => {});
+    };
+    card.addEventListener("click", selectSound);
     card.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        const changed = settings.sound_id !== sound.id;
-        saveSettings({ sound_id: sound.id });
-        if (changed && settings.preview_sound_on_change !== false) {
-          previewSound(sound.id);
-        }
+        selectSound();
       }
     });
     elements.soundOptions.append(card);
@@ -790,6 +841,9 @@ function handleKeyboard(event) {
   } else if (["1", "2", "3"].includes(event.key)) {
     const meter = METERS[Number(event.key) - 1];
     sendDiscrete({ type: "set_meter", beats_per_bar: meter.beats_per_bar, beat_unit: meter.beat_unit });
+  } else if (event.key.toLowerCase() === "p") {
+    event.preventDefault();
+    togglePerformMode();
   }
 }
 
@@ -852,9 +906,20 @@ function escapeText(value) {
 }
 
 function registerServiceWorker() {
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js").catch(() => {
-      showMessage("Offline cache is unavailable in this browser.", true);
-    });
+  if (!("serviceWorker" in navigator)) {
+    return;
   }
+  navigator.serviceWorker.register("/sw.js").catch(() => {
+    showMessage("Offline cache is unavailable in this browser.", true);
+  });
+  // Auto-claim a freshly-installed service worker so the very next reload
+  // serves the new shell — kills the "fullscreen ghost button" some users
+  // saw after a hard upgrade (cached v3 HTML lingering in the SW).
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (window.__metronomeReloadedForSw) {
+      return;
+    }
+    window.__metronomeReloadedForSw = true;
+    window.location.reload();
+  });
 }

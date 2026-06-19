@@ -14,7 +14,10 @@ const PUBLIC_DIR = path.join(__dirname, "..", "public");
 const DEFAULT_DB_PATH = process.env.METRONOME_DB_PATH ?? path.join(process.cwd(), "data", "metronome.sqlite");
 const WS_MAX_PAYLOAD_BYTES = 4096;
 const SSE_KEEPALIVE_MS = 15000;
-const SOUND_IDS = ["classic", "wood", "digital", "cowbell", "tick", "snare", "kick", "rim", "shaker", "hihat"];
+const SOUND_IDS = [
+  "classic", "studio", "trainer", "wood", "stick", "rim",
+  "cowbell", "bell", "agogo", "logic", "tick", "shaker", "hihat", "digital",
+];
 
 export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.env.METRONOME_API_TOKEN ?? null } = {}) {
   const app = express();
@@ -51,7 +54,7 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.e
   app.get("/api/info", (_request, response) => {
     response.json({
       app: "metronome",
-      version: "1.5.0",
+      version: "1.6.0",
       sounds: SOUND_IDS,
       meters: ["4/4", "3/4", "6/8"],
       bpm_range: [30, 300],
@@ -180,7 +183,22 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.e
     response.redirect(301, "/");
   });
 
-  app.use(express.static(PUBLIC_DIR, { extensions: ["html"] }));
+  // Static assets: HTML/manifest/SW must NOT be cached aggressively (or old
+  // deploys leave ghost UI behind — see the lingering "fullscreen" button
+  // users reported after a hard upgrade). Hashable JS/CSS get a moderate
+  // cache. The service worker is the source of truth for offline support.
+  app.use(
+    express.static(PUBLIC_DIR, {
+      extensions: ["html"],
+      setHeaders(response, filePath) {
+        if (filePath.endsWith(".html") || filePath.endsWith(".webmanifest") || filePath.endsWith("sw.js")) {
+          response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        } else {
+          response.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
+        }
+      },
+    }),
+  );
 
   wss.on("connection", (socket) => {
     const limiter = createRateLimiter();
