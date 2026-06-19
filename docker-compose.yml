@@ -3,7 +3,6 @@ name: metronome
 services:
   metronome:
     build: .
-    container_name: metronome
     ports:
       - "${METRONOME_PORT:-3000}:3000"
     environment:

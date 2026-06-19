@@ -841,7 +841,7 @@ function handleKeyboard(event) {
   } else if (["1", "2", "3"].includes(event.key)) {
     const meter = METERS[Number(event.key) - 1];
     sendDiscrete({ type: "set_meter", beats_per_bar: meter.beats_per_bar, beat_unit: meter.beat_unit });
-  } else if (event.key.toLowerCase() === "p") {
+  } else if (event.key.toLowerCase() === "p" && !event.ctrlKey && !event.metaKey && !event.altKey) {
     event.preventDefault();
     togglePerformMode();
   }
