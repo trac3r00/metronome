@@ -1290,3 +1290,94 @@ input[type="checkbox"] {
     box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--color-primary) 20%, transparent);
   }
 }
+
+/* ---------------------------------------------------------------------------
+   v1.6 — Performance mode + sound groups + perf icon-button active state.
+   --------------------------------------------------------------------------- */
+
+.icon-button.active {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+}
+
+.sound-group-heading {
+  grid-column: 1 / -1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.7;
+  margin: 0.5rem 0 0.25rem;
+  padding-left: 0.25rem;
+}
+
+.sound-group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Performance mode: live-band one-tap UI.
+   Hide tempo control row, stepper, meter row, preset edit chip, footer help.
+   Blow up BPM, START/STOP, and the preset chips to oversized targets. */
+body.perf-mode .topbar-actions #share,
+body.perf-mode .topbar-actions #open-settings {
+  display: none;
+}
+body.perf-mode #tempo-control,
+body.perf-mode #bpm-minus,
+body.perf-mode #bpm-plus,
+body.perf-mode .meter-tap-row,
+body.perf-mode #edit-presets,
+body.perf-mode .shortcut-help,
+body.perf-mode .message {
+  display: none !important;
+}
+body.perf-mode .stage-grid {
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+body.perf-mode .tempo-panel {
+  align-items: center;
+  justify-content: center;
+}
+body.perf-mode .bpm-row {
+  justify-content: center;
+}
+body.perf-mode #bpm-display {
+  font-size: clamp(8rem, 28vw, 22rem);
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+body.perf-mode .tempo-readout span:last-child {
+  font-size: clamp(1.2rem, 3vw, 2.5rem);
+  letter-spacing: 0.2em;
+  opacity: 0.6;
+}
+body.perf-mode .beat-indicator {
+  transform: scale(1.4);
+  margin-bottom: 1.5rem;
+}
+body.perf-mode .preset-strip {
+  padding: 0.5rem;
+}
+body.perf-mode .preset-chip {
+  font-size: clamp(1.1rem, 2.8vw, 1.8rem);
+  padding: 1rem 1.5rem;
+  min-height: 4.5rem;
+}
+body.perf-mode .play-button {
+  font-size: clamp(2.5rem, 7vw, 5rem);
+  padding: clamp(1.5rem, 5vw, 3rem) clamp(2rem, 8vw, 6rem);
+  letter-spacing: 0.15em;
+  min-height: clamp(8rem, 18vw, 14rem);
+  width: 100%;
+  border-radius: 2rem;
+  font-weight: 800;
+}
+body.perf-mode .live-controls {
+  gap: 1.5rem;
+}

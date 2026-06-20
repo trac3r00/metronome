@@ -32,6 +32,7 @@ const elements = {
   statusText: document.querySelector("[data-status-text]"),
   share: document.querySelector("#share"),
   openSettings: document.querySelector("#open-settings"),
+  perfToggle: document.querySelector("#perf-toggle"),
   beatIndicator: document.querySelector("#beat-indicator"),
   bpmDisplay: document.querySelector("#bpm-display"),
   bpmMinus: document.querySelector("#bpm-minus"),
@@ -61,6 +62,7 @@ const elements = {
   volumeValue: document.querySelector("#volume-value"),
   previewToggle: document.querySelector("#preview-toggle"),
   backgroundAudioToggle: document.querySelector("#background-audio-toggle"),
+  performanceModeToggle: document.querySelector("#performance-mode-toggle"),
   theme: document.querySelector("#theme-select"),
   lastSynced: document.querySelector("#last-synced"),
   forceResync: document.querySelector("#force-resync"),
@@ -90,10 +92,11 @@ let state = createInitialState();
 let settings = {
   control_style: "slider",
   theme: "auto",
-  sound_id: "classic",
+  sound_id: "studio",
   volume: 80,
   preview_sound_on_change: true,
   background_audio: true,
+  performance_mode: false,
   updated_at: null,
 };
 let presets = [];
@@ -142,6 +145,10 @@ function bindControls() {
     event.preventDefault();
     openSettings();
   });
+  elements.perfToggle.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    togglePerformanceMode();
+  });
   document.addEventListener("visibilitychange", handleVisibilityChange);
   document.addEventListener("keydown", handleKeyboard);
   renderMeterButtons();
@@ -170,6 +177,11 @@ function bindSettingsModal() {
   elements.backgroundAudioToggle.addEventListener("change", () =>
     saveSettings({ background_audio: elements.backgroundAudioToggle.checked }),
   );
+  elements.performanceModeToggle.addEventListener("change", () => {
+    settings = { ...settings, performance_mode: elements.performanceModeToggle.checked };
+    applyPerformanceMode();
+    saveSettings({ performance_mode: elements.performanceModeToggle.checked });
+  });
   elements.forceResync.addEventListener("click", () => {
     loadSettings();
     loadPresets();
@@ -324,6 +336,7 @@ function applySettings(nextSettings) {
   scheduler.setSound(settings.sound_id);
   scheduler.setVolume(settings.volume);
   applyTheme();
+  applyPerformanceMode();
   renderCurrentTempoControl();
   renderPresets();
   renderControlStyleCards();
@@ -332,12 +345,32 @@ function applySettings(nextSettings) {
   syncSettingsControls();
 }
 
+function applyPerformanceMode() {
+  const on = settings.performance_mode === true;
+  document.body.classList.toggle("perf-mode", on);
+  if (elements.perfToggle) {
+    elements.perfToggle.setAttribute("aria-pressed", String(on));
+    elements.perfToggle.classList.toggle("active", on);
+  }
+}
+
+function togglePerformanceMode() {
+  // Local-first: flip the class instantly, persist asynchronously. Matches the
+  // sound-card / volume-slider lag fix — the live band should never wait on
+  // a round trip.
+  const next = !(settings.performance_mode === true);
+  settings = { ...settings, performance_mode: next };
+  applyPerformanceMode();
+  saveSettings({ performance_mode: next });
+}
+
 function syncSettingsControls() {
   elements.theme.value = settings.theme ?? "auto";
   elements.volumeSlider.value = String(settings.volume ?? 80);
   elements.volumeValue.textContent = `${settings.volume ?? 80}%`;
   elements.previewToggle.checked = settings.preview_sound_on_change !== false;
   elements.backgroundAudioToggle.checked = settings.background_audio !== false;
+  elements.performanceModeToggle.checked = settings.performance_mode === true;
 }
 
 function applyTheme() {
@@ -458,44 +491,73 @@ function renderControlStyleCards() {
 
 function renderSoundOptionCards() {
   elements.soundOptions.replaceChildren();
+  // Group cards by their `group` field so users can scan band/percussion/
+  // classic/subtle/modern families fast.
+  const groups = new Map();
   for (const sound of SOUND_OPTIONS) {
-    const card = document.createElement("div");
-    card.className = "radio-card sound-card";
-    card.tabIndex = 0;
-    card.setAttribute("role", "radio");
-    card.setAttribute("aria-checked", String(settings.sound_id === sound.id));
-    card.innerHTML = `
-      <span class="sound-mark ${sound.id}" aria-hidden="true"></span>
-      <strong>${sound.name}</strong>
-      <span>${sound.id}</span>
-    `;
-    const playButton = document.createElement("button");
-    playButton.className = "small-button ghost";
-    playButton.type = "button";
-    playButton.textContent = "Play";
-    playButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      previewSound(sound.id, { force: true });
-    });
-    card.append(playButton);
-    card.addEventListener("click", () => {
-      const changed = settings.sound_id !== sound.id;
-      saveSettings({ sound_id: sound.id });
-      if (changed && settings.preview_sound_on_change !== false) {
-        previewSound(sound.id);
-      }
-    });
-    card.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
+    const key = sound.group ?? "Sounds";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(sound);
+  }
+  for (const [groupName, sounds] of groups) {
+    const heading = document.createElement("div");
+    heading.className = "sound-group-heading";
+    heading.textContent = groupName;
+    elements.soundOptions.append(heading);
+    const grid = document.createElement("div");
+    grid.className = "sound-group-grid";
+    for (const sound of sounds) {
+      const card = document.createElement("div");
+      card.className = "radio-card sound-card";
+      card.tabIndex = 0;
+      card.setAttribute("role", "radio");
+      card.setAttribute("aria-checked", String(settings.sound_id === sound.id));
+      card.innerHTML = `
+        <span class="sound-mark ${sound.id}" aria-hidden="true"></span>
+        <strong>${sound.name}</strong>
+        <span>${sound.id}</span>
+      `;
+      const playButton = document.createElement("button");
+      playButton.className = "small-button ghost";
+      playButton.type = "button";
+      playButton.textContent = "Play";
+      playButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        previewSound(sound.id, { force: true });
+      });
+      card.append(playButton);
+      card.addEventListener("click", () => {
         const changed = settings.sound_id !== sound.id;
+        // Local-first: apply to scheduler + UI instantly (~25ms perceived),
+        // then persist async. Fixes v1.5 round-trip lag.
+        if (changed) {
+          settings = { ...settings, sound_id: sound.id };
+          scheduler.setSound(sound.id);
+          renderSoundOptionCards();
+        }
         saveSettings({ sound_id: sound.id });
         if (changed && settings.preview_sound_on_change !== false) {
           previewSound(sound.id);
         }
-      }
-    });
-    elements.soundOptions.append(card);
+      });
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          const changed = settings.sound_id !== sound.id;
+          if (changed) {
+            settings = { ...settings, sound_id: sound.id };
+            scheduler.setSound(sound.id);
+            renderSoundOptionCards();
+          }
+          saveSettings({ sound_id: sound.id });
+          if (changed && settings.preview_sound_on_change !== false) {
+            previewSound(sound.id);
+          }
+        }
+      });
+      grid.append(card);
+    }
+    elements.soundOptions.append(grid);
   }
 }
 
@@ -773,21 +835,31 @@ function send(message, failureMessage = "Change could not be sent.") {
 }
 
 function handleKeyboard(event) {
-  if (!window.matchMedia("(min-width: 1440px)").matches || event.target.closest("input, select, textarea")) {
+  if (event.target.closest("input, select, textarea")) {
     return;
   }
+  const isDesktop = window.matchMedia("(min-width: 1440px)").matches;
   if (event.code === "Space") {
+    if (!isDesktop) return;
     event.preventDefault();
     togglePlayback();
   } else if (event.key === "ArrowUp") {
+    if (!isDesktop) return;
     event.preventDefault();
     updateBpmImmediate(state.bpm + (event.shiftKey ? 5 : 1));
   } else if (event.key === "ArrowDown") {
+    if (!isDesktop) return;
     event.preventDefault();
     updateBpmImmediate(state.bpm - (event.shiftKey ? 5 : 1));
   } else if (event.key.toLowerCase() === "t") {
+    if (!isDesktop) return;
     tapTempo();
+  } else if (event.key.toLowerCase() === "p") {
+    // Performance toggle works on any viewport — it's the live-band hotkey.
+    event.preventDefault();
+    togglePerformanceMode();
   } else if (["1", "2", "3"].includes(event.key)) {
+    if (!isDesktop) return;
     const meter = METERS[Number(event.key) - 1];
     sendDiscrete({ type: "set_meter", beats_per_bar: meter.beats_per_bar, beat_unit: meter.beat_unit });
   }
@@ -852,9 +924,32 @@ function escapeText(value) {
 }
 
 function registerServiceWorker() {
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js").catch(() => {
+  if (!("serviceWorker" in navigator)) return;
+  let reloading = false;
+  // When the SW takes control after an update, force a one-shot reload so the
+  // page picks up the new HTML/JS/CSS immediately. This is what kills the
+  // "ghost fullscreen button still showing v3 cached HTML" class of bug.
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+  navigator.serviceWorker
+    .register("/sw.js")
+    .then((registration) => {
+      registration.addEventListener("updatefound", () => {
+        const installing = registration.installing;
+        if (!installing) return;
+        installing.addEventListener("statechange", () => {
+          if (installing.state === "installed" && navigator.serviceWorker.controller) {
+            // A fresh worker is waiting and an old one still controls the page.
+            // Tell it to skipWaiting → it'll fire controllerchange → reload.
+            installing.postMessage({ type: "skipWaiting" });
+          }
+        });
+      });
+    })
+    .catch(() => {
       showMessage("Offline cache is unavailable in this browser.", true);
     });
-  }
 }
