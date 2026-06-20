@@ -49,16 +49,8 @@
             <div class="bpm-row">
               <button id="bpm-minus" class="step-button" type="button" aria-label="Decrease BPM" data-stage-control>−</button>
               <div class="tempo-readout" aria-live="polite">
-                <div class="pulse-ring" aria-hidden="true">
-                  <svg class="pulse-ring-svg" viewBox="0 0 200 200">
-                    <circle class="pulse-ring-track" cx="100" cy="100" r="90"/>
-                    <circle class="pulse-ring-progress" cx="100" cy="100" r="90"/>
-                  </svg>
-                  <div class="pulse-ring-content">
-                    <span id="bpm-display">120</span>
-                    <span class="tempo-readout-unit">BPM</span>
-                  </div>
-                </div>
+                <span id="bpm-display">120</span>
+                <span class="tempo-readout-unit">BPM</span>
               </div>
               <button id="bpm-plus" class="step-button" type="button" aria-label="Increase BPM" data-stage-control>+</button>
             </div>
@@ -97,7 +89,7 @@
       <article class="share-card">
         <header>
           <h2 id="share-title">Share</h2>
-          <button id="share-close" class="icon-button" type="button" aria-label="Close"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+          <button id="share-close" class="icon-button" type="button" aria-label="Close">✕</button>
         </header>
         <p class="share-hint">Send the link to anyone on the same Wi-Fi to join the room.</p>
         <div class="share-quick">
@@ -130,7 +122,7 @@
       <article class="settings-card">
         <header class="settings-modal-header">
           <h2 id="settings-title">Settings</h2>
-          <button id="settings-close" class="icon-button" type="button" aria-label="Close settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+          <button id="settings-close" class="icon-button" type="button" aria-label="Close settings">✕</button>
         </header>
         <div class="settings-body">
           <section class="settings-section" aria-labelledby="presets-heading">
@@ -218,7 +210,7 @@
       <form method="dialog" id="preset-form">
         <header>
           <h2 id="preset-modal-title">Add Preset</h2>
-          <button class="icon-button" value="cancel" type="submit" aria-label="Close"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+          <button class="icon-button" value="cancel" type="submit" aria-label="Close">✕</button>
         </header>
         <input id="preset-id" type="hidden">
         <label>
