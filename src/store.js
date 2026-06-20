@@ -10,19 +10,30 @@ const DEFAULT_SETTINGS = Object.freeze({
   control_style: "slider",
   theme: "auto",
   fullscreen_only: false,
-  sound_id: "classic",
+  sound_id: "studio",
   volume: 80,
   preview_sound_on_change: true,
   background_audio: true,
+  performance_mode: false,
 });
 const CONTROL_STYLES = new Set(["dial", "slider", "wheel", "tap"]);
 const THEMES = new Set(["auto", "light", "dark"]);
-const SOUND_IDS = new Set(["classic", "wood", "digital", "cowbell", "tick", "snare", "kick", "rim", "shaker", "hihat"]);
+const SOUND_IDS = new Set([
+  "studio", "trainer", "stick", "rim", "sidestick", "cowbell", "agogo", "bell",
+  "classic", "wood", "soft_tick", "shaker", "closed_hihat", "digital",
+]);
+// Legacy v1.5 → v1.6 sound id mapping (mirrors public/audio.js LEGACY_SOUND_MAP).
+const LEGACY_SOUND_MAP = Object.freeze({
+  snare: "studio",
+  kick: "studio",
+  hihat: "closed_hihat",
+  tick: "soft_tick",
+});
 const METERS = new Set(["4/4", "3/4", "6/8"]);
 const DEFAULT_SETTINGS_PRESETS = Object.freeze([60, 80, 100, 120, 140]);
 const MIN_BPM = 30;
 const MAX_BPM = 300;
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 export class StateStore {
   constructor(dbPath) {
@@ -49,10 +60,11 @@ export class StateStore {
         control_style TEXT NOT NULL DEFAULT 'slider',
         theme TEXT NOT NULL DEFAULT 'auto',
         fullscreen_only INTEGER NOT NULL DEFAULT 0,
-        sound_id TEXT NOT NULL DEFAULT 'classic',
+        sound_id TEXT NOT NULL DEFAULT 'studio',
         volume INTEGER NOT NULL DEFAULT 80,
         preview_sound_on_change INTEGER NOT NULL DEFAULT 1,
         background_audio INTEGER NOT NULL DEFAULT 1,
+        performance_mode INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS meta (
@@ -77,7 +89,7 @@ export class StateStore {
     this.ensureSettingsColumns();
     this.db
       .prepare(
-        "INSERT OR IGNORE INTO settings (id, control_style, theme, fullscreen_only, sound_id, volume, preview_sound_on_change, background_audio, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO settings (id, control_style, theme, fullscreen_only, sound_id, volume, preview_sound_on_change, background_audio, performance_mode, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         DEFAULT_SETTINGS.control_style,
@@ -87,6 +99,7 @@ export class StateStore {
         DEFAULT_SETTINGS.volume,
         DEFAULT_SETTINGS.preview_sound_on_change ? 1 : 0,
         DEFAULT_SETTINGS.background_audio ? 1 : 0,
+        DEFAULT_SETTINGS.performance_mode ? 1 : 0,
         now,
       );
     this.applySchemaMigrations();
@@ -129,6 +142,7 @@ export class StateStore {
     this.addSettingsColumnIfMissing(columns, "volume", "volume INTEGER NOT NULL DEFAULT 80");
     this.addSettingsColumnIfMissing(columns, "preview_sound_on_change", "preview_sound_on_change INTEGER NOT NULL DEFAULT 1");
     this.addSettingsColumnIfMissing(columns, "background_audio", "background_audio INTEGER NOT NULL DEFAULT 1");
+    this.addSettingsColumnIfMissing(columns, "performance_mode", "performance_mode INTEGER NOT NULL DEFAULT 0");
   }
 
   addSettingsColumnIfMissing(columns, name, definition) {
@@ -151,6 +165,15 @@ export class StateStore {
       const settings = this.db.prepare("SELECT control_style FROM settings WHERE id = 1").get();
       if (settings?.control_style === "dial") {
         this.db.prepare("UPDATE settings SET control_style = ?, updated_at = ? WHERE id = 1").run("slider", Date.now());
+      }
+    }
+    if (version < 3) {
+      // v1.5 → v1.6 sound id remap. Old snare/kick/tick/hihat picks become
+      // the closest band-quality voice so users don't lose their preference.
+      const settings = this.db.prepare("SELECT sound_id FROM settings WHERE id = 1").get();
+      const mapped = LEGACY_SOUND_MAP[settings?.sound_id];
+      if (mapped) {
+        this.db.prepare("UPDATE settings SET sound_id = ?, updated_at = ? WHERE id = 1").run(mapped, Date.now());
       }
     }
     if (version < SCHEMA_VERSION) {
@@ -216,6 +239,7 @@ export class StateStore {
       volume: settings.volume,
       preview_sound_on_change: Boolean(settings.preview_sound_on_change),
       background_audio: Boolean(settings.background_audio),
+      performance_mode: Boolean(settings.performance_mode),
       updated_at: settings.updated_at,
       presets: this.listPresets(),
     };
@@ -237,11 +261,15 @@ export class StateStore {
         patch.background_audio === undefined
           ? current.background_audio
           : parseBoolean(patch.background_audio, "background_audio"),
+      performance_mode:
+        patch.performance_mode === undefined
+          ? current.performance_mode
+          : parseBoolean(patch.performance_mode, "performance_mode"),
       updated_at: Date.now(),
     };
     this.db
       .prepare(
-        "UPDATE settings SET control_style = ?, theme = ?, sound_id = ?, volume = ?, preview_sound_on_change = ?, background_audio = ?, updated_at = ? WHERE id = 1",
+        "UPDATE settings SET control_style = ?, theme = ?, sound_id = ?, volume = ?, preview_sound_on_change = ?, background_audio = ?, performance_mode = ?, updated_at = ? WHERE id = 1",
       )
       .run(
         next.control_style,
@@ -250,6 +278,7 @@ export class StateStore {
         next.volume,
         next.preview_sound_on_change ? 1 : 0,
         next.background_audio ? 1 : 0,
+        next.performance_mode ? 1 : 0,
         next.updated_at,
       );
     return this.getSettings();
@@ -382,8 +411,15 @@ function parseTheme(value) {
 }
 
 function parseSoundId(value) {
+  // Accept legacy v1.5 ids and remap to v1.6 closest match — keeps
+  // PUT /api/settings backward compatible.
+  if (LEGACY_SOUND_MAP[value]) {
+    return LEGACY_SOUND_MAP[value];
+  }
   if (!SOUND_IDS.has(value)) {
-    throw new StoreValidationError("Sound must be classic, wood, digital, cowbell, tick, snare, kick, rim, shaker, or hihat");
+    throw new StoreValidationError(
+      "Sound must be one of: studio, trainer, stick, rim, sidestick, cowbell, agogo, bell, classic, wood, soft_tick, shaker, closed_hihat, digital",
+    );
   }
   return value;
 }

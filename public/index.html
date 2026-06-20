@@ -22,6 +22,7 @@
             <span data-status-text>Connecting</span>
           </div>
           <div class="topbar-actions">
+            <button id="perf-toggle" class="icon-button" type="button" aria-label="Toggle performance mode" aria-pressed="false" title="Performance mode (P)">⛶</button>
             <button id="share" class="icon-button" type="button" aria-label="Share">⤴</button>
             <button id="open-settings" class="icon-button" type="button" aria-label="Open settings">⚙</button>
           </div>
@@ -56,7 +57,7 @@
         </div>
 
         <footer class="shortcut-help">
-          Space=Start/Stop · ↑↓=BPM ±1 · Shift+↑↓=±5 · T=Tap · 1/2/3=meter switch
+          Space=Start/Stop · ↑↓=BPM ±1 · Shift+↑↓=±5 · T=Tap · 1/2/3=meter switch · P=Performance
         </footer>
       </section>
     </main>
@@ -136,6 +137,13 @@
               <span>
                 <strong>Keep playing in background</strong>
                 <small>Continue the click while the tab is hidden or the browser is minimized.</small>
+              </span>
+            </label>
+            <label class="toggle-row">
+              <input id="performance-mode-toggle" type="checkbox">
+              <span>
+                <strong>Performance mode</strong>
+                <small>Live-band view: giant BPM + START/STOP, hide controls. Toggle with ⛶ or the P key.</small>
               </span>
             </label>
           </section>

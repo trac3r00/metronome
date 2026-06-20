@@ -14,7 +14,10 @@ const PUBLIC_DIR = path.join(__dirname, "..", "public");
 const DEFAULT_DB_PATH = process.env.METRONOME_DB_PATH ?? path.join(process.cwd(), "data", "metronome.sqlite");
 const WS_MAX_PAYLOAD_BYTES = 4096;
 const SSE_KEEPALIVE_MS = 15000;
-const SOUND_IDS = ["classic", "wood", "digital", "cowbell", "tick", "snare", "kick", "rim", "shaker", "hihat"];
+const SOUND_IDS = [
+  "studio", "trainer", "stick", "rim", "sidestick", "cowbell", "agogo", "bell",
+  "classic", "wood", "soft_tick", "shaker", "closed_hihat", "digital",
+];
 
 export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.env.METRONOME_API_TOKEN ?? null } = {}) {
   const app = express();
@@ -51,7 +54,7 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.e
   app.get("/api/info", (_request, response) => {
     response.json({
       app: "metronome",
-      version: "1.5.0",
+      version: "1.6.0",
       sounds: SOUND_IDS,
       meters: ["4/4", "3/4", "6/8"],
       bpm_range: [30, 300],

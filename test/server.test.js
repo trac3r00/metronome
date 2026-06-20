@@ -205,10 +205,11 @@ describe("server settings and preset sync", () => {
     // Then: server defaults include slider control, auto theme, and five ordered presets.
     assert.equal(settings.control_style, "slider");
     assert.equal(settings.theme, "auto");
-    assert.equal(settings.sound_id, "classic");
+    assert.equal(settings.sound_id, "studio");
     assert.equal(settings.volume, 80);
     assert.equal(settings.preview_sound_on_change, true);
     assert.equal(settings.background_audio, true);
+    assert.equal(settings.performance_mode, false);
     assert.equal(Object.hasOwn(settings, "fullscreen_only"), false);
     assert.deepEqual(
       settings.presets.map(({ bpm, meter, name, position }) => ({ bpm, meter, name, position })),
@@ -286,8 +287,44 @@ describe("server settings and preset sync", () => {
     // Then: the one-shot migration changes dial to slider and records v2 idempotently.
     assert.equal(firstSettings.control_style, "slider");
     assert.equal(secondSettings.control_style, "slider");
-    assert.equal(version.value, "2");
+    assert.equal(version.value, "3");
     second.close();
+  });
+
+  it("migrates legacy v1.5 sound ids (snare/kick/tick/hihat) to v1.6 voices once", async () => {
+    // Given: a v1.5 install with sound_id = 'snare' (which no longer exists in v1.6).
+    const dir = await mkdtemp(path.join(tmpdir(), "metronome-db-"));
+    tempDirs.push(dir);
+    const dbPath = path.join(dir, "state.sqlite");
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        control_style TEXT NOT NULL DEFAULT 'slider',
+        theme TEXT NOT NULL DEFAULT 'auto',
+        fullscreen_only INTEGER NOT NULL DEFAULT 0,
+        sound_id TEXT NOT NULL DEFAULT 'classic',
+        volume INTEGER NOT NULL DEFAULT 80,
+        preview_sound_on_change INTEGER NOT NULL DEFAULT 1,
+        background_audio INTEGER NOT NULL DEFAULT 1,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO settings (id, control_style, theme, fullscreen_only, sound_id, updated_at)
+      VALUES (1, 'slider', 'auto', 0, 'snare', 123);
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO meta (key, value) VALUES ('schema_version', '2');
+    `);
+    db.close();
+
+    // When: the store boots against the legacy database.
+    const store = new StateStore(dbPath);
+    const settings = store.getSettings();
+    const version = store.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
+
+    // Then: 'snare' is remapped to 'studio' and the schema is bumped to v3.
+    assert.equal(settings.sound_id, "studio");
+    assert.equal(version.value, "3");
+    store.close();
   });
 
   it("creates, lists, updates, reorders, and deletes presets", async () => {

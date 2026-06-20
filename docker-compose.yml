@@ -1,3 +1,5 @@
+name: metronome
+
 services:
   metronome:
     build: .
@@ -12,3 +14,4 @@ services:
 
 volumes:
   metronome-data:
+    name: metronome-data
