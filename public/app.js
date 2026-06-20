@@ -856,6 +856,20 @@ function flashBeat(beat, delay) {
     renderBeatIndicator(beat);
     elements.beatIndicator.classList.add("pulse");
     setTimeout(() => elements.beatIndicator.classList.remove("pulse"), 150);
+    // v1.7: pulse-ring visualization (BPM ring + downbeat color)
+    const ring = document.querySelector(".pulse-ring");
+    if (ring) {
+      const beatsPerBar = state.beats_per_bar || 4;
+      const isDownbeat = beat === 0;
+      ring.classList.toggle("downbeat", isDownbeat);
+      // progress ring: arc grows over the bar — full at last beat, resets on downbeat
+      const progress = (beat + 1) / beatsPerBar; // 1/4, 2/4, 3/4, 4/4
+      ring.style.setProperty("--pulse-progress", String(565.487 * (1 - progress)));
+      ring.classList.remove("pulse");
+      void ring.offsetWidth;
+      ring.classList.add("pulse");
+      setTimeout(() => ring.classList.remove("pulse"), 200);
+    }
   }, delay * 1000);
 }
 

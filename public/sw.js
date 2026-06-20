@@ -3,7 +3,7 @@
 // background revalidation. Stale caches from older versions are deleted on
 // activate.
 
-const CACHE_NAME = "church-metronome-v6";
+const CACHE_NAME = "church-metronome-v7";
 const SHELL_ASSETS = ["/"];
 const RUNTIME_ASSETS = [
   "/app.js",
