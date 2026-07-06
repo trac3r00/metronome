@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import WebSocket, { WebSocketServer } from "ws";
 
-import { createRateLimiter, isRateLimited } from "./rate-limiter.js";
+import { createRateLimiter, createHttpRateLimiter, isRateLimited } from "./rate-limiter.js";
 import { reduceMessage, ValidationError } from "./state.js";
 import { StateStore, StoreValidationError } from "./store.js";
 
@@ -26,6 +26,10 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.e
   let closePromise;
 
   app.use(express.json({ limit: "16kb" }));
+
+  // Shared per-IP rate limiter for all mutating HTTP endpoints — mirrors the
+  // per-connection token bucket applied on the WebSocket path.
+  const httpLimiter = createHttpRateLimiter();
 
   // CORS for the public read endpoints + control API so StreamDeck / OBS / scripts
   // running on the same LAN can talk to the server without a same-origin browser.
@@ -75,7 +79,7 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.e
     response.json(state);
   });
 
-  app.put("/api/settings", requireAuth(apiToken), (request, response) => {
+  app.put("/api/settings", requireAuth(apiToken), httpLimiter, (request, response) => {
     try {
       const settings = store.updateSettings(request.body ?? {});
       response.json(settings);
@@ -90,7 +94,7 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.e
     response.json(store.listPresets());
   });
 
-  app.post("/api/presets", requireAuth(apiToken), (request, response) => {
+  app.post("/api/presets", requireAuth(apiToken), httpLimiter, (request, response) => {
     try {
       const preset = store.createPreset(request.body ?? {});
       response.status(201).json(preset);
@@ -101,7 +105,7 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.e
     }
   });
 
-  app.patch("/api/presets/:id", requireAuth(apiToken), (request, response) => {
+  app.patch("/api/presets/:id", requireAuth(apiToken), httpLimiter, (request, response) => {
     try {
       const preset = store.updatePreset(request.params.id, request.body ?? {});
       if (!preset) {
@@ -116,7 +120,7 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.e
     }
   });
 
-  app.delete("/api/presets/:id", requireAuth(apiToken), (request, response) => {
+  app.delete("/api/presets/:id", requireAuth(apiToken), httpLimiter, (request, response) => {
     const deleted = store.deletePreset(request.params.id);
     if (!deleted) {
       response.status(404).json({ error: "Preset not found" });
@@ -127,7 +131,7 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.e
     sendSseEvent(sseClients, "presets", store.listPresets());
   });
 
-  app.post("/api/presets/reorder", requireAuth(apiToken), (request, response) => {
+  app.post("/api/presets/reorder", requireAuth(apiToken), httpLimiter, (request, response) => {
     try {
       const presets = store.reorderPresets(request.body?.ids);
       response.json(presets);
@@ -141,7 +145,7 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.e
   // Control endpoint: lets HTTP clients (StreamDeck, OBS plugin scripts, shell
   // scripts) drive playback without speaking WebSocket. Accepts the same
   // `reduceMessage` payloads the WebSocket uses.
-  app.post("/api/control", requireAuth(apiToken), (request, response) => {
+  app.post("/api/control", requireAuth(apiToken), httpLimiter, (request, response) => {
     try {
       const message = request.body ?? {};
       state = store.save(reduceMessage(state, message));
