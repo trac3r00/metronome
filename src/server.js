@@ -1,4 +1,5 @@
 import http from "node:http";
+import url from "node:url";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,7 +22,21 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.e
   const store = new StateStore(dbPath);
   let state = store.load();
   const server = http.createServer(app);
-  const wss = new WebSocketServer({ server, path: "/ws", maxPayload: WS_MAX_PAYLOAD_BYTES });
+  const wss = new WebSocketServer({
+    server,
+    path: "/ws",
+    maxPayload: WS_MAX_PAYLOAD_BYTES,
+    verifyClient: apiToken
+      ? ({ req }, done) => {
+          const parsed = url.parse(req.url, true);
+          if (parsed.query.token === apiToken) {
+            done(true);
+          } else {
+            done(false, 401, "Unauthorized");
+          }
+        }
+      : undefined,
+  });
   const sseClients = new Set();
   let closePromise;
 

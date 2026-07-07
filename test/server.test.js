@@ -365,6 +365,57 @@ describe("server settings and preset sync", () => {
   });
 });
 
+describe("websocket authentication", () => {
+  it("rejects websocket connections without a token when auth is required", async () => {
+    const appServer = await startTestServer(undefined, { apiToken: "s3cret" });
+
+    // When: a client connects without providing a token.
+    const socket = new WebSocket(appServer.wsUrl);
+    const error = await new Promise((resolve) => {
+      socket.once("error", resolve);
+    });
+
+    // Then: the server rejects the upgrade with a 401.
+    assert.match(error.message, /401/);
+  });
+
+  it("rejects websocket connections with a wrong token", async () => {
+    const appServer = await startTestServer(undefined, { apiToken: "s3cret" });
+
+    // When: a client connects with an incorrect token.
+    const socket = new WebSocket(`${appServer.wsUrl}?token=wrong`);
+    const error = await new Promise((resolve) => {
+      socket.once("error", resolve);
+    });
+
+    // Then: the server rejects the upgrade with a 401.
+    assert.match(error.message, /401/);
+  });
+
+  it("accepts websocket connections with the correct token", async () => {
+    const appServer = await startTestServer(undefined, { apiToken: "s3cret" });
+
+    // When: a client connects with the correct token.
+    const { socket, initial } = await openClientWithInitial(`${appServer.wsUrl}?token=s3cret`);
+
+    // Then: the connection succeeds and the initial state is received.
+    assert.equal(initial.type, "state");
+    assert.equal(initial.state.bpm, 120);
+    socket.close();
+  });
+
+  it("allows websocket connections without a token when auth is not required", async () => {
+    const appServer = await startTestServer();
+
+    // When: a client connects to a server with no token configured.
+    const { socket, initial } = await openClientWithInitial(appServer.wsUrl);
+
+    // Then: the connection succeeds normally.
+    assert.equal(initial.type, "state");
+    socket.close();
+  });
+});
+
 describe("static PWA surface", () => {
   it("serves a health endpoint for Docker health checks", async () => {
     // Given: a running server.
@@ -446,13 +497,14 @@ describe("static PWA surface", () => {
   });
 });
 
-async function startTestServer(dbPath) {
+async function startTestServer(dbPath, extra = {}) {
   const dir = dbPath ? null : await mkdtemp(path.join(tmpdir(), "metronome-db-"));
   if (dir) {
     tempDirs.push(dir);
   }
   const appServer = createAppServer({
     dbPath: dbPath ?? path.join(dir, "state.sqlite"),
+    ...extra,
   });
   await appServer.listen(0, "127.0.0.1");
   servers.push(appServer);
