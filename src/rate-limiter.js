@@ -25,3 +25,25 @@ export function isRateLimited(limiter, now = Date.now()) {
   limiter.blockedUntil = now + RATE_LIMIT_BLOCK_MS;
   return true;
 }
+
+/**
+ * Express middleware that rate-limits mutating HTTP endpoints per client IP.
+ * Uses the same token-bucket algorithm as the WebSocket path so both surfaces
+ * share identical abuse thresholds.
+ */
+export function createHttpRateLimiter() {
+  const limiters = new Map();
+  return (request, response, next) => {
+    const ip = request.ip ?? request.socket.remoteAddress ?? "unknown";
+    let limiter = limiters.get(ip);
+    if (!limiter) {
+      limiter = createRateLimiter();
+      limiters.set(ip, limiter);
+    }
+    if (isRateLimited(limiter)) {
+      response.status(429).json({ error: "Rate limit exceeded. Try again shortly." });
+      return;
+    }
+    next();
+  };
+}
