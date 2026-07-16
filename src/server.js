@@ -1,5 +1,4 @@
 import http from "node:http";
-import url from "node:url";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,8 +27,7 @@ export function createAppServer({ dbPath = DEFAULT_DB_PATH, apiToken = process.e
     maxPayload: WS_MAX_PAYLOAD_BYTES,
     verifyClient: apiToken
       ? ({ req }, done) => {
-          const parsed = url.parse(req.url, true);
-          if (parsed.query.token === apiToken) {
+          if (extractBearerToken(req.headers.authorization) === apiToken) {
             done(true);
           } else {
             done(false, 401, "Unauthorized");
@@ -308,14 +306,16 @@ function requireAuth(token) {
       next();
       return;
     }
-    const header = request.headers.authorization ?? "";
-    const presented = header.startsWith("Bearer ") ? header.slice(7) : header;
-    if (presented === token) {
+    if (extractBearerToken(request.headers.authorization) === token) {
       next();
       return;
     }
     response.status(401).json({ error: "Unauthorized" });
   };
+}
+
+function extractBearerToken(header = "") {
+  return header.startsWith("Bearer ") ? header.slice(7) : header;
 }
 
 function broadcastState(wss, state) {
