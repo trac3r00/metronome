@@ -366,10 +366,10 @@ describe("server settings and preset sync", () => {
 });
 
 describe("websocket authentication", () => {
-  it("rejects websocket connections without a token when auth is required", async () => {
+  it("rejects websocket connections without a bearer token when auth is required", async () => {
     const appServer = await startTestServer(undefined, { apiToken: "s3cret" });
 
-    // When: a client connects without providing a token.
+    // When: a client connects without providing a bearer token.
     const socket = new WebSocket(appServer.wsUrl);
     const error = await new Promise((resolve) => {
       socket.once("error", resolve);
@@ -379,11 +379,11 @@ describe("websocket authentication", () => {
     assert.match(error.message, /401/);
   });
 
-  it("rejects websocket connections with a wrong token", async () => {
+  it("rejects websocket connections with a wrong bearer token", async () => {
     const appServer = await startTestServer(undefined, { apiToken: "s3cret" });
 
-    // When: a client connects with an incorrect token.
-    const socket = new WebSocket(`${appServer.wsUrl}?token=wrong`);
+    // When: a client connects with an incorrect bearer token.
+    const socket = new WebSocket(appServer.wsUrl, { headers: { Authorization: "Bearer wrong" } });
     const error = await new Promise((resolve) => {
       socket.once("error", resolve);
     });
@@ -392,11 +392,11 @@ describe("websocket authentication", () => {
     assert.match(error.message, /401/);
   });
 
-  it("accepts websocket connections with the correct token", async () => {
+  it("accepts websocket connections with the correct bearer token", async () => {
     const appServer = await startTestServer(undefined, { apiToken: "s3cret" });
 
-    // When: a client connects with the correct token.
-    const { socket, initial } = await openClientWithInitial(`${appServer.wsUrl}?token=s3cret`);
+    // When: a client connects with the correct bearer token.
+    const { socket, initial } = await openClientWithInitial(appServer.wsUrl, { Authorization: "Bearer s3cret" });
 
     // Then: the connection succeeds and the initial state is received.
     assert.equal(initial.type, "state");
@@ -404,15 +404,73 @@ describe("websocket authentication", () => {
     socket.close();
   });
 
+  it("rejects websocket query-string tokens by default", async () => {
+    const appServer = await startTestServer(undefined, { apiToken: "s3cret" });
+
+    // When: a client puts the token in the URL query string.
+    const socket = new WebSocket(`${appServer.wsUrl}?token=s3cret`);
+    const error = await new Promise((resolve) => {
+      socket.once("error", resolve);
+    });
+
+    // Then: the default auth path rejects URL credentials.
+    assert.match(error.message, /401/);
+  });
+
   it("allows websocket connections without a token when auth is not required", async () => {
     const appServer = await startTestServer();
 
-    // When: a client connects to a server with no token configured.
+    // Then: websocket connections succeed without any credentials.
     const { socket, initial } = await openClientWithInitial(appServer.wsUrl);
 
-    // Then: the connection succeeds normally.
     assert.equal(initial.type, "state");
     socket.close();
+  });
+});
+
+describe("HTTP bearer authentication", () => {
+  it("rejects mutating HTTP requests without a bearer token when auth is required", async () => {
+    const { baseUrl } = await startTestServer(undefined, { apiToken: "s3cret" });
+
+    // When: a PUT request arrives with no Authorization header.
+    const response = await fetch(`${baseUrl}/api/settings`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ theme: "dark" }),
+    });
+
+    // Then: the server rejects it.
+    assert.equal(response.status, 401);
+  });
+
+  it("rejects mutating HTTP requests with a wrong bearer token", async () => {
+    const { baseUrl } = await startTestServer(undefined, { apiToken: "s3cret" });
+
+    // When: a PUT request arrives with an incorrect token.
+    const response = await fetch(`${baseUrl}/api/settings`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", Authorization: "Bearer wrong" },
+      body: JSON.stringify({ theme: "dark" }),
+    });
+
+    // Then: the server rejects it.
+    assert.equal(response.status, 401);
+  });
+
+  it("accepts mutating HTTP requests with the correct bearer token", async () => {
+    const { baseUrl } = await startTestServer(undefined, { apiToken: "s3cret" });
+
+    // When: a PUT request arrives with the correct token.
+    const response = await fetch(`${baseUrl}/api/settings`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", Authorization: "Bearer s3cret" },
+      body: JSON.stringify({ theme: "dark" }),
+    });
+
+    // Then: the server accepts it.
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.theme, "dark");
   });
 });
 
@@ -511,16 +569,16 @@ async function startTestServer(dbPath, extra = {}) {
   return appServer;
 }
 
-function openClient(wsUrl) {
+function openClient(wsUrl, headers) {
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(wsUrl);
+    const socket = new WebSocket(wsUrl, headers ? { headers } : undefined);
     socket.once("open", () => resolve(socket));
     socket.once("error", reject);
   });
 }
 
-async function openClientWithInitial(wsUrl) {
-  const socket = new WebSocket(wsUrl);
+async function openClientWithInitial(wsUrl, headers) {
+  const socket = new WebSocket(wsUrl, headers ? { headers } : undefined);
   const initial = readJson(socket);
   await new Promise((resolve, reject) => {
     socket.once("open", resolve);
