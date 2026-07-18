@@ -17,7 +17,7 @@ Originally built for church broadcast teams, it works just as well for any room 
 - 📱 **Background playback toggle** (default on): the click keeps going when the tab is hidden or the browser is minimized.
 - ⏱️ **Web Worker scheduler** keeps timing tight even when the host tab is throttled — no more drifting clicks.
 - 🔌 **HTTP control API + SSE event stream** for StreamDeck, OBS browser sources, shell scripts, etc.
-- 🔐 Optional `METRONOME_API_TOKEN` Bearer auth for the control endpoints.
+- 🔐 Optional `METRONOME_API_TOKEN` Bearer auth for control endpoints and WebSocket upgrades.
 - 🌐 **WebSocket sync** with exponential-backoff reconnect, and an offline fallback served from the service worker cache.
 - 🛡️ **Hardened server**: validation, payload caps, burst rate limiting, SQLite persistence, `/healthz` for orchestrators.
 
@@ -48,7 +48,7 @@ The compose file stores SQLite data in the `metronome-data` volume so preset slo
 | `PORT` | `3000` | HTTP and WebSocket port. |
 | `HOST` | `0.0.0.0` | Bind address for the Node server. |
 | `METRONOME_DB_PATH` | `./data/metronome.sqlite` | SQLite file used for room state, presets, and settings. |
-| `METRONOME_API_TOKEN` | _(unset)_ | When set, all write endpoints (`POST/PUT/PATCH/DELETE /api/...` and `POST /api/control`) require `Authorization: Bearer <token>`. Read endpoints stay open. |
+| `METRONOME_API_TOKEN` | _(unset)_ | When set, all write endpoints (`POST/PUT/PATCH/DELETE /api/...` and `POST /api/control`) plus the WebSocket upgrade at `/ws` require the `Authorization: Bearer *** header. Read endpoints stay open. |
 
 ## Using It
 
@@ -136,7 +136,31 @@ curl -X POST http://metronome.local:3000/api/control \
 curl -N http://metronome.local:3000/api/events
 ```
 
-WebSocket messages are documented in `src/state.js` (`reduceMessage`).
+## WebSocket Authentication
+
+WebSocket messages are documented in `src/state.js` (`reduceMessage`). When `METRONOME_API_TOKEN` is unset, `/ws` stays open for trusted-LAN use. When `METRONOME_API_TOKEN` is set, the WebSocket upgrade at `/ws` requires the same `Authorization: Bearer *** header used by the REST control endpoints. The server rejects the upgrade with `401` if the token is missing or wrong.
+
+### Client migration
+
+Query-string WebSocket tokens are deprecated and disabled by default. Tokens in URLs can leak into server logs, reverse-proxy logs, browser history, and diagnostics.
+
+If a custom client currently connects with a token in the URL, move the token to the upgrade request header:
+
+**Before (query string — no longer accepted):**
+```js
+const socket = new WebSocket("ws://host:3000/ws?token=YOUR_TOKEN");
+```
+
+**After (Node `ws` client):**
+```js
+const socket = new WebSocket("ws://host:3000/ws", {
+  headers: { Authorization: "Bearer YOUR_TOKEN" },
+});
+```
+
+The Node `ws` library supports custom headers at connection time. Browser `WebSocket` does **not** support custom `Authorization` headers, so browser clients should either run without `METRONOME_API_TOKEN` on a trusted LAN or put authentication at a reverse proxy in front of `/ws`.
+
+There is no compatibility flag or environment variable that re-enables `?token=` WebSocket authentication in the server default path.
 
 ## License
 
