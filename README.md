@@ -1,167 +1,211 @@
 # Metronome
 
-A synchronized PWA metronome. The server holds the source of truth for BPM, meter, playback, presets, and audio settings, and every connected browser stays in sync over WebSockets.
+> A self-hosted progressive web app for keeping multiple metronome clients synchronized.
 
-Originally built for church broadcast teams, it works just as well for any room where multiple devices need to click together.
+![Node.js 20+](https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white)
 
-## Highlights
+## Overview
 
-- 🎚️ **Live BPM stage** with beat pulse visualization, choice of dial / slider / wheel / tap controls.
-- 🥁 **Meter switching** between `4/4`, `3/4`, and `6/8`.
-- 👆 **Tap Tempo** estimates BPM from your taps.
-- 🔊 **Ten click sounds** (classic, wood, digital, cowbell, soft tick, snare, kick, rim, shaker, hi-hat) with a volume slider and per-sound preview.
-- 🗂️ **Preset library** with add / edit / drag-reorder / delete — tap a preset chip on the stage to apply.
-- 📤 **Share modal**: quick-share buttons (native Share / AirDrop + Copy link) first, QR code on demand.
-- ⚙️ **Settings in an in-page modal** — the metronome **keeps playing** while you change anything.
-- 🔇 **Preview-on-change toggle** (default on): turn off the sample click when switching sounds or moving the volume.
-- 📱 **Background playback toggle** (default on): the click keeps going when the tab is hidden or the browser is minimized.
-- ⏱️ **Web Worker scheduler** keeps timing tight even when the host tab is throttled — no more drifting clicks.
-- 🔌 **HTTP control API + SSE event stream** for StreamDeck, OBS browser sources, shell scripts, etc.
-- 🔐 Optional `METRONOME_API_TOKEN` Bearer auth for control endpoints and WebSocket upgrades.
-- 🌐 **WebSocket sync** with exponential-backoff reconnect, and an offline fallback served from the service worker cache.
-- 🛡️ **Hardened server**: validation, payload caps, burst rate limiting, SQLite persistence, `/healthz` for orchestrators.
+Metronome provides a shared tempo, meter, playback state, presets, and audio settings to browsers connected to the same server. The Node.js server persists room state in SQLite and distributes updates over WebSockets; each browser generates its own click track with the Web Audio API.
 
-## Quick Start
+The application was designed for production and broadcast teams that need several devices to follow the same metronome state on a trusted network. It also exposes REST and server-sent event (SSE) interfaces for external controllers and displays.
 
-### Local
+## Features
 
-```bash
-npm install
-npm test     # 51 tests
-npm start    # http://localhost:3000
-```
-
-### Docker
-
-```bash
-docker compose build
-docker compose up -d
-curl -fsS http://localhost:3000/healthz
-```
-
-The compose file stores SQLite data in the `metronome-data` volume so preset slots and settings survive container restarts.
-
-## Environment Variables
-
-| Name | Default | Description |
-| --- | --- | --- |
-| `PORT` | `3000` | HTTP and WebSocket port. |
-| `HOST` | `0.0.0.0` | Bind address for the Node server. |
-| `METRONOME_DB_PATH` | `./data/metronome.sqlite` | SQLite file used for room state, presets, and settings. |
-| `METRONOME_API_TOKEN` | _(unset)_ | When set, all write endpoints (`POST/PUT/PATCH/DELETE /api/...` and `POST /api/control`) plus the WebSocket upgrade at `/ws` require the `Authorization: Bearer *** header. Read endpoints stay open. |
-
-## Using It
-
-### Stage (main screen)
-
-- **+ / − buttons or slider** to set BPM (30–300).
-- **START / STOP** to toggle playback for every connected client.
-- **Meter buttons** (`4/4` / `3/4` / `6/8`).
-- **TAP** to derive BPM from your taps.
-- **Preset chips** apply BPM + meter in one tap.
-- **⤴ Share** opens the QR / link / AirDrop modal.
-- **⚙ Settings** opens the in-page settings modal — playback never stops.
-
-### Settings modal
-
-- **Presets** — add, edit, reorder (drag or ▲ / ▼), delete.
-- **Tempo control style** — dial / slider / wheel / tap.
-- **Sound** — pick a click sound, set volume, toggle preview-on-change.
-- **Playback** — toggle background playback (keep playing when hidden / minimized).
-- **Theme** — auto / light / dark.
-- **Sync** — last-synced timestamp and a force-resync button.
-
-### Sharing
-
-- **QR code** — scan from any device on the same Wi-Fi to join the room.
-- **Copy link** — paste anywhere.
-- **Share / AirDrop** — on iPhone / iPad / Mac the system share sheet exposes AirDrop and every messaging app. On Android the system share sheet exposes every messenger and nearby-share. On desktops without `navigator.share` the button hides and a tip points to Copy link.
-
-### Keyboard shortcuts (≥ 1440 px screens)
-
-- `Space` — start / stop
-- `↑ / ↓` — BPM ± 1 (`Shift` ± 5)
-- `T` — tap tempo
-- `1 / 2 / 3` — switch meter to 4/4 / 3/4 / 6/8
-
-## NAS Deployment Notes
-
-- Use the provided `docker-compose.yml` on Synology, Unraid, TrueNAS Scale, or anything that speaks Docker Compose.
-- Keep port `3000` mapped only to the trusted LAN unless you front the app with an authenticated reverse proxy.
-- Back up the `metronome-data` volume if preset slots and settings matter operationally.
-- Reverse proxies must forward WebSocket upgrade headers to `/ws`.
-- `/healthz` returns JSON with app and store status, so NAS dashboards can alert on database issues.
+- Synchronized BPM, meter, and playback state across connected browsers
+- BPM range from 30 to 300, tap tempo, and `4/4`, `3/4`, or `6/8` meters
+- Slider, dial, wheel, and tap tempo control styles
+- Ten synthesized click sounds with volume and preview controls
+- Persistent presets with create, edit, reorder, and delete operations
+- Auto, light, and dark themes
+- Optional background playback while the page is hidden
+- Share links through the system share sheet, clipboard, or an on-demand QR code
+- Installable PWA shell with service-worker caching and local controls when offline
+- REST control API, SSE updates, and a health endpoint
+- Optional Bearer authentication for mutating HTTP routes and WebSocket upgrades
+- Per-connection WebSocket and per-IP mutating HTTP rate limits
 
 ## Architecture
 
-- **Server** — Node.js 20+ Express server for static files + REST API, `ws` WebSocket server at `/ws` for state sync, `better-sqlite3` persistence for room state, presets, and settings.
-- **Client** — Vanilla JS PWA with a Web Audio scheduler driven by `AudioContext.currentTime`. Service worker (cache `church-metronome-v4`) serves the shell offline.
-- **State model** — server is the single source of truth; clients send intent messages (`set_bpm`, `set_meter`, `set_playing`, `apply_preset`, …), server validates and broadcasts the resulting state to every connected socket.
+```text
+External controllers  ---- REST requests ----+
+    and displays      <----- SSE events ------|
+                                             |
+Browser PWA  <------- WebSocket state ------>+--- Node.js server
+    |                                             Express + ws
+    +-- Web Audio click scheduler                    |
+    +-- Service worker cache                         +--- SQLite database
+```
 
-## REST API
+The server is the source of truth for shared state. Browsers send control messages such as `set_bpm` or `set_playing`; the server validates, persists, and broadcasts the resulting state. Audio is not streamed by the server. Each browser schedules its own sounds against `AudioContext.currentTime`, using a Web Worker when available.
 
-| Method | Path | Auth | Description |
-| --- | --- | --- | --- |
-| `GET` | `/healthz` | – | Health check (app + store). |
-| `GET` | `/api/info` | – | App version, supported sounds / meters / BPM range, endpoint map, `auth_required`. |
-| `GET` | `/api/state` | – | Current room state snapshot. |
-| `GET` | `/api/settings` | – | Settings + presets. |
-| `GET` | `/api/presets` | – | List presets. |
-| `GET` | `/api/events` | – | Server-sent events stream (`state`, `settings`, `presets` events). |
-| `POST` | `/api/control` | token | Drive playback. Payload is the same `reduceMessage` shape as the WebSocket (`{type:"set_bpm",bpm:140}`, `{type:"set_meter",beats_per_bar:6,beat_unit:8}`, `{type:"set_playing",playing:true}`, `{type:"toggle_playing"}`, `{type:"apply_preset",bpm:120,meter:"4/4"}`, `{type:"load_preset",slot:1}`, `{type:"overwrite_preset",slot:1}`). |
-| `PUT` | `/api/settings` | token | Update settings (control style, theme, sound, volume, preview, background audio). |
-| `POST` | `/api/presets` | token | Create a preset (`bpm`, `meter`, `name`). |
-| `PATCH` | `/api/presets/:id` | token | Update a preset. |
-| `DELETE` | `/api/presets/:id` | token | Delete a preset. |
-| `POST` | `/api/presets/reorder` | token | Reorder presets by id list. |
+## Requirements
 
-`token` columns require the `Authorization: Bearer …` header **only** when `METRONOME_API_TOKEN` is set; otherwise the endpoint is open.
+- Node.js 20 or later
+- npm
+- Docker with Docker Compose, if running the containerized deployment
 
-### Examples (StreamDeck / OBS / shell)
+## Installation
+
+### Local installation
 
 ```bash
-# Start the click
-curl -X POST http://metronome.local:3000/api/control \
-  -H 'Authorization: Bearer <token>' \
-  -H 'Content-Type: application/json' \
-  -d '{"type":"set_playing","playing":true}'
-
-# Set BPM 140
-curl -X POST http://metronome.local:3000/api/control \
-  -H 'Authorization: Bearer <token>' \
-  -H 'Content-Type: application/json' \
-  -d '{"type":"set_bpm","bpm":140}'
-
-# Subscribe to state changes (OBS browser source / EventSource)
-curl -N http://metronome.local:3000/api/events
+git clone https://github.com/trac3r00/metronome.git
+cd metronome
+npm ci
+npm start
 ```
 
-## WebSocket Authentication
+Open <http://localhost:3000>. The server creates `data/metronome.sqlite` on first start.
 
-WebSocket messages are documented in `src/state.js` (`reduceMessage`). When `METRONOME_API_TOKEN` is unset, `/ws` stays open for trusted-LAN use. When `METRONOME_API_TOKEN` is set, the WebSocket upgrade at `/ws` requires the same `Authorization: Bearer *** header used by the REST control endpoints. The server rejects the upgrade with `401` if the token is missing or wrong.
+### Docker Compose
 
-### Client migration
-
-Query-string WebSocket tokens are deprecated and disabled by default. Tokens in URLs can leak into server logs, reverse-proxy logs, browser history, and diagnostics.
-
-If a custom client currently connects with a token in the URL, move the token to the upgrade request header:
-
-**Before (query string — no longer accepted):**
-```js
-const socket = new WebSocket("ws://host:3000/ws?token=YOUR_TOKEN");
+```bash
+git clone https://github.com/trac3r00/metronome.git
+cd metronome
+docker compose up --build -d
+curl -fsS http://localhost:3000/healthz
 ```
 
-**After (Node `ws` client):**
+The Compose deployment publishes port `3000` and stores the SQLite database in the `metronome-data` volume. To publish a different host port:
+
+```bash
+METRONOME_PORT=8080 docker compose up --build -d
+```
+
+## Usage
+
+On the main stage:
+
+- Use the step buttons or the selected tempo control to set BPM.
+- Select `4/4`, `3/4`, or `6/8` to change the meter.
+- Select **TAP** repeatedly to derive a tempo.
+- Select **START** or **STOP** to change playback for all connected clients.
+- Select a preset to apply its BPM and meter.
+- Open **Settings** to manage presets, controls, sound, volume, background audio, and theme.
+- Open **Share** to copy the room URL, use the system share sheet, or display a QR code.
+
+Browsers may require a pointer or keyboard interaction before allowing audio playback. Offline changes remain local to that browser and are not persisted or replayed when the connection returns.
+
+### Keyboard shortcuts
+
+Shortcuts are enabled on viewports at least 1440 pixels wide and are ignored while an input, select, or text area has focus.
+
+| Key | Action |
+| --- | --- |
+| `Space` | Start or stop playback |
+| `Up` / `Down` | Change BPM by 1 |
+| `Shift` + `Up` / `Down` | Change BPM by 5 |
+| `T` | Tap tempo |
+| `1`, `2`, `3` | Select `4/4`, `3/4`, or `6/8` |
+
+### HTTP API
+
+Read endpoints are public. Mutating endpoints require a valid `Authorization` header only when `METRONOME_API_TOKEN` is configured.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/healthz` | Report application and SQLite store health |
+| `GET` | `/api/info` | Report version, supported values, endpoint map, and auth status |
+| `GET` | `/api/state` | Return the current shared room state |
+| `GET` | `/api/settings` | Return settings and persistent presets |
+| `GET` | `/api/presets` | Return persistent presets |
+| `GET` | `/api/events` | Stream initial and subsequent `state`, `settings`, and `presets` SSE events |
+| `POST` | `/api/control` | Apply a supported state message |
+| `PUT` | `/api/settings` | Update supported settings fields |
+| `POST` | `/api/presets` | Create a preset |
+| `PATCH` | `/api/presets/:id` | Update a preset |
+| `DELETE` | `/api/presets/:id` | Delete a preset |
+| `POST` | `/api/presets/reorder` | Reorder all presets using an `ids` array |
+
+Start playback through the control API:
+
+```bash
+curl --request POST http://localhost:3000/api/control \
+  --header 'Content-Type: application/json' \
+  --data '{"type":"set_playing","playing":true}'
+```
+
+Set the tempo and subscribe to state changes:
+
+```bash
+curl --request POST http://localhost:3000/api/control \
+  --header 'Content-Type: application/json' \
+  --data '{"type":"set_bpm","bpm":140}'
+
+curl --no-buffer http://localhost:3000/api/events
+```
+
+`POST /api/control` accepts the message types implemented in `src/state.js`: `set_bpm`, `set_meter`, `set_playing`, `toggle_playing`, `apply_preset`, `load_preset`, and `overwrite_preset`. Values are validated against the supported BPM, meter, and preset-slot ranges.
+
+## Configuration
+
+The server reads configuration from environment variables at startup.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PORT` | `3000` | HTTP and WebSocket listening port |
+| `HOST` | `0.0.0.0` | Server bind address |
+| `METRONOME_DB_PATH` | `./data/metronome.sqlite` | SQLite database path, resolved from the current working directory by default |
+| `METRONOME_API_TOKEN` | Unset | Token required by mutating HTTP routes and the `/ws` upgrade |
+
+`docker-compose.yml` additionally reads `METRONOME_PORT`, which controls the published host port and defaults to `3000`. Inside the container, the server always listens on port `3000` and stores data at `/app/data/metronome.sqlite`.
+
+### Authentication
+
+When `METRONOME_API_TOKEN` is set, send it as a Bearer token:
+
+```bash
+curl --request POST http://localhost:3000/api/control \
+  --header 'Authorization: Bearer replace-with-your-token' \
+  --header 'Content-Type: application/json' \
+  --data '{"type":"set_bpm","bpm":140}'
+```
+
+The same header is required during the WebSocket upgrade. Node.js clients using the `ws` package can provide it:
+
 ```js
-const socket = new WebSocket("ws://host:3000/ws", {
-  headers: { Authorization: "Bearer YOUR_TOKEN" },
+import WebSocket from "ws";
+
+const socket = new WebSocket("ws://localhost:3000/ws", {
+  headers: { Authorization: "Bearer replace-with-your-token" },
 });
 ```
 
-The Node `ws` library supports custom headers at connection time. Browser `WebSocket` does **not** support custom `Authorization` headers, so browser clients should either run without `METRONOME_API_TOKEN` on a trusted LAN or put authentication at a reverse proxy in front of `/ws`.
+Browser `WebSocket` does not support custom `Authorization` headers, and the bundled browser client does not attach the API token to HTTP writes. Consequently, enabling `METRONOME_API_TOKEN` prevents the bundled UI from establishing its normal authenticated control channel unless a reverse proxy injects the matching backend header. For the bundled UI, either keep the application on a trusted network without this token or enforce client authentication at a reverse proxy and configure that proxy to satisfy the backend authentication requirement.
 
-There is no compatibility flag or environment variable that re-enables `?token=` WebSocket authentication in the server default path.
+Tokens in a WebSocket query string are not accepted. All read endpoints, including the SSE stream, remain public when the token is enabled. The server also sends `Access-Control-Allow-Origin: *`, so deployments exposed beyond a trusted network should apply appropriate reverse-proxy access controls.
+
+## Development
+
+Install the locked dependencies and run the Node.js test suite:
+
+```bash
+npm ci
+npm test
+```
+
+There is no separate build, lint, or type-check script. The server runs the source files directly:
+
+```bash
+npm start
+```
+
+Tests use the built-in `node:test` runner and cover server routes, WebSocket synchronization and authentication, persistence, validation, rate limiting, client helpers, and audio scheduling.
+
+## Project structure
+
+```text
+src/                 Express/WebSocket server, state validation, rate limiting, and SQLite storage
+public/              Browser PWA, audio scheduler, service worker, styles, and static assets
+test/                Node.js test suite
+docs/                Project health, release policy, ADR template, and handoff records
+Dockerfile           Production container image
+docker-compose.yml   Local or NAS-oriented container deployment
+```
+
+For a reverse-proxy deployment, forward WebSocket upgrades for `/ws`, keep the SQLite volume backed up, and use `/healthz` for health monitoring.
 
 ## License
 
-Add a license file if you intend to distribute publicly.
+This repository does not currently include a license file or declare a project license in `package.json`.
